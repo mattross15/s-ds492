@@ -1,0 +1,1858 @@
+---
+title: "s&ds thesis stuff"
+author: "Matthew Ross"
+date: "2025-02-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(readxl)
+
+# Read in your data files
+lpdata <- read.csv("/Users/mross/Downloads/master.csv")
+funddata <- read_excel("/Users/mross/Downloads/Preqin_Fundperformance_export-28_Feb_2530ee1808-842d-4444-9364-5c85226b4815.xlsx")
+
+
+colnames(funddata)
+
+# Subset funddata to keep only the needed columns
+funddata_sub <- funddata %>%
+  select(
+    `FUND ID`,
+    `ASSET CLASS`,
+    `FINAL CLOSE SIZE (USD MN)`,
+    `FUND MANAGER`,
+    `CORE INDUSTRIES`,
+    `FUND MANAGER TOTAL AUM (USD MN)`,
+    `INDUSTRY VERTICALS`,
+    `FUND NUMBER (OVERALL)`,
+    `TARGET SIZE (USD MN)`,
+    `MEDIAN BENCHMARK NET IRR (%)`,
+    `MEDIAN BENCHMARK NET MULTIPLE (X)`,
+    `MEDIAN BENCHMARK RVPI (%)`,
+    `AVERAGE BENCHMARK NET IRR (%)`,
+    `AVERAGE BENCHMARK CALLED (%)`,
+    `AVERAGE BENCHMARK DISTRIBUTED (%) DPI`,
+    `AVERAGE BENCHMARK NET MULTIPLE (X)`,
+    `AVERAGE BENCHMARK RVPI (%)`,
+    `WEIGHTED BENCHMARK NET IRR (%)`,
+    `MEDIAN BENCHMARK DISTRIBUTED (%) DPI`,
+    `WEIGHTED BENCHMARK CALLED (%)`,
+    `WEIGHTED BENCHMARK DISTRIBUTED (%) DPI`,
+    `WEIGHTED BENCHMARK NET MULTIPLE (X)`,
+    `WEIGHTED BENCHMARK RVPI (%)`,
+    `POOLED BENCHMARK NET IRR (%)`,
+    `MEDIAN BENCHMARK CALLED (%)`,
+    `BENCHMARK NAME`,
+    `GEOGRAPHIC FOCUS`,
+    `STRATEGY`
+  )
+
+
+length(unique(lpdata$FUND.ID))
+
+# Left join so that each lpdata row gets the matching funddata info
+lpdata_joined <- lpdata %>%
+  left_join(funddata_sub, by = c("FUND.ID" = "FUND ID"))
+
+# Now, print the rows from lpdata that did not have a matching funddata row.
+# (Here, we check one of the funddata columns; if it is NA, no match was found.)
+missing_matches <- lpdata_joined %>% filter(is.na(`FUND MANAGER`))
+print(missing_matches)
+
+df <- lpdata_joined
+
+sum(is.na(df$`INDUSTRY VERTICALS`))
+
+df <- df %>% select(-c(`INDUSTRY VERTICALS`))
+
+
+preqindata <- read.csv("/Users/mross/Downloads/LP data new new.csv")
+
+
+colnames(preqindata)
+# Define the columns to remove. Using ncol(preqindata) ensures that from column 579 onward is removed.
+cols_to_remove <- c(295, 296, 341:458, 467:500, 503:504, 521:530, 547:550, 561:570, 573:574, 579:ncol(preqindata))
+
+# Create a new dataset that excludes these columns
+preqindata_new <- preqindata[, -cols_to_remove]
+colnames(preqindata_new)
+
+```
+Clean up column names
+
+```{r}
+
+# Define vectors of detailed columns (these names remain unchanged)
+cols_to_drop_buyout <- c(
+  # BuyoutDeals Group 1: Energy
+  "BuyoutDeals_PrimaryIndustry_Oil...Gas_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Oil...Gas_AggValue" ,
+  "BuyoutDeals_PrimaryIndustry_Power...Utilities_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Power...Utilities_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Renewable.Energy_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Renewable.Energy_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Energy.Storage...Batteries_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Energy.Storage...Batteries_AggValue",
+  
+  # Group 2: Healthcare & Life Sciences (Buyout)
+  "BuyoutDeals_PrimaryIndustry_Healthcare_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Healthcare_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Healthcare.IT_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Healthcare.IT_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Healthcare.Specialists_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Healthcare.Specialists_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Medical.Devices...Equipment_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Medical.Devices...Equipment_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Pharmaceuticals_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Pharmaceuticals_AggValue",
+  
+  # Group 3A: Digital & IT (Buyout)
+  "BuyoutDeals_PrimaryIndustry_Software_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Software_AggValue",
+  "BuyoutDeals_PrimaryIndustry_IT.Infrastructure_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_IT.Infrastructure_AggValue",
+  "BuyoutDeals_PrimaryIndustry_IT.Security.Cybersecurity_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_IT.Security.Cybersecurity_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Internet_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Internet_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Information.Services_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Information.Services_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Telecoms_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Telecoms_AggValue",
+  
+  # Group 3B: Emerging Tech & Media (Buyout)
+  "BuyoutDeals_PrimaryIndustry_Electronics_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Electronics_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Media_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Media_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Financial.Services_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Financial.Services_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Agribusiness_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Agribusiness_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Biotechnology_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Biotechnology_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Semiconductors_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Semiconductors_AggValue",
+  
+  # Group 4: Consumer & Retail (Buyout)
+  "BuyoutDeals_PrimaryIndustry_Consumer.Products_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Consumer.Products_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Food_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Food_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Consumer.Services_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Consumer.Services_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Retail_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Retail_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Marketing.Advertising_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Marketing.Advertising_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Business.Support.Services_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Business.Support.Services_AggValue",
+  
+  # Group 5: Industrials & Infrastructure (Buyout)
+  "BuyoutDeals_PrimaryIndustry_Aerospace_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Aerospace_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Construction_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Construction_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Industrial.Machinery_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Industrial.Machinery_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Rail.Transport_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Rail.Transport_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Ship.Building...Repair_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Ship.Building...Repair_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Logistics...Distribution_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Logistics...Distribution_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Outsourcing_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Outsourcing_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Real.Estate.Development...Operating.Companies_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Real.Estate.Development...Operating.Companies_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Commercial.Property_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Commercial.Property_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Mining_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Mining_AggValue" ,
+  
+  
+  
+  # Group 6: Others / Niche (Buyout)
+  "BuyoutDeals_PrimaryIndustry_Defence_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Defence_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Environmental.Services_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Environmental.Services_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Hardware_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Hardware_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Transportation.Services_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Transportation.Services_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Travel...Leisure_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Travel...Leisure_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Automobiles..Other.Vehicles...Parts_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Automobiles..Other.Vehicles...Parts_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Education.Training_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Education.Training_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Heating..Cooling...Ventilation.Equipment.and.Services_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Heating..Cooling...Ventilation.Equipment.and.Services_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Bottling_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Bottling_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Packaging_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Packaging_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Chemicals_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Chemicals_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Materials_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Materials_AggValue",
+  "BuyoutDeals_PrimaryIndustry_Insurance_NumDeals",
+  "BuyoutDeals_PrimaryIndustry_Insurance_AggValue"
+)
+
+cols_to_drop_vc <- c(
+  # VCDeals Group 1: Tech & Innovation – to be split into two refined groups below.
+  "VCDeals_PrimaryIndustry_Software_NumDeals",
+  "VCDeals_PrimaryIndustry_Software_AggValue",
+  "VCDeals_PrimaryIndustry_Internet_NumDeals",
+  "VCDeals_PrimaryIndustry_Internet_AggValue",
+  "VCDeals_PrimaryIndustry_Telecoms_NumDeals",
+  "VCDeals_PrimaryIndustry_Telecoms_AggValue",
+  "VCDeals_PrimaryIndustry_IT.Security.Cybersecurity_NumDeals",
+  "VCDeals_PrimaryIndustry_IT.Security.Cybersecurity_AggValue",
+  "VCDeals_PrimaryIndustry_IT.Infrastructure_NumDeals",
+  "VCDeals_PrimaryIndustry_IT.Infrastructure_AggValue",
+  "VCDeals_PrimaryIndustry_Information.Services_NumDeals",
+  "VCDeals_PrimaryIndustry_Information.Services_AggValue",
+  "VCDeals_PrimaryIndustry_Electronics_NumDeals",
+  "VCDeals_PrimaryIndustry_Electronics_AggValue",
+  "VCDeals_PrimaryIndustry_Marketing.Advertising_NumDeals",
+  "VCDeals_PrimaryIndustry_Marketing.Advertising_AggValue",
+  "VCDeals_PrimaryIndustry_Financial.Services_NumDeals",
+  "VCDeals_PrimaryIndustry_Financial.Services_AggValue",
+  
+  # VCDeals Group 2: Healthcare & Life Sciences
+  "VCDeals_PrimaryIndustry_Medical.Devices...Equipment_NumDeals",
+  "VCDeals_PrimaryIndustry_Medical.Devices...Equipment_AggValue",
+  "VCDeals_PrimaryIndustry_Biotechnology_NumDeals",
+  "VCDeals_PrimaryIndustry_Biotechnology_AggValue",
+  "VCDeals_PrimaryIndustry_Healthcare.IT_NumDeals",
+  "VCDeals_PrimaryIndustry_Healthcare.IT_AggValue",
+  "VCDeals_PrimaryIndustry_Healthcare_NumDeals",
+  "VCDeals_PrimaryIndustry_Healthcare_AggValue",
+  "VCDeals_PrimaryIndustry_Healthcare.Specialists_NumDeals",
+  "VCDeals_PrimaryIndustry_Healthcare.Specialists_AggValue",
+  
+  # VCDeals Group 3: Consumer & Retail
+  "VCDeals_PrimaryIndustry_Consumer.Products_NumDeals",
+  "VCDeals_PrimaryIndustry_Consumer.Products_AggValue",
+  "VCDeals_PrimaryIndustry_Consumer.Services_NumDeals",
+  "VCDeals_PrimaryIndustry_Consumer.Services_AggValue",
+  "VCDeals_PrimaryIndustry_Retail_NumDeals",
+  "VCDeals_PrimaryIndustry_Retail_AggValue",
+  "VCDeals_PrimaryIndustry_Food_NumDeals",
+  "VCDeals_PrimaryIndustry_Food_AggValue",
+  
+  # VCDeals Group 4: Industrials & Infrastructure
+  "VCDeals_PrimaryIndustry_Transportation.Services_NumDeals",
+  "VCDeals_PrimaryIndustry_Transportation.Services_AggValue",
+  "VCDeals_PrimaryIndustry_Aerospace_NumDeals",
+  "VCDeals_PrimaryIndustry_Aerospace_AggValue",
+  "VCDeals_PrimaryIndustry_Commercial.Property_NumDeals",
+  "VCDeals_PrimaryIndustry_Commercial.Property_AggValue",
+  "VCDeals_PrimaryIndustry_Construction_NumDeals",
+  "VCDeals_PrimaryIndustry_Construction_AggValue",
+  "VCDeals_PrimaryIndustry_Industrial.Machinery_NumDeals",
+  "VCDeals_PrimaryIndustry_Industrial.Machinery_AggValue",
+  "VCDeals_PrimaryIndustry_Logistics...Distribution_NumDeals",
+  "VCDeals_PrimaryIndustry_Logistics...Distribution_AggValue",
+  "VCDeals_PrimaryIndustry_Real.Estate.Development...Operating.Companies_NumDeals",
+  "VCDeals_PrimaryIndustry_Real.Estate.Development...Operating.Companies_AggValue",
+  
+  # VCDeals Group 5: Energy & Resources
+  "VCDeals_PrimaryIndustry_Energy.Storage...Batteries_NumDeals",
+  "VCDeals_PrimaryIndustry_Energy.Storage...Batteries_AggValue",
+  "VCDeals_PrimaryIndustry_Oil...Gas_NumDeals",
+  "VCDeals_PrimaryIndustry_Oil...Gas_AggValue",
+  "VCDeals_PrimaryIndustry_Power...Utilities_NumDeals",
+  "VCDeals_PrimaryIndustry_Power...Utilities_AggValue",
+  "VCDeals_PrimaryIndustry_Renewable.Energy_NumDeals",
+  "VCDeals_PrimaryIndustry_Renewable.Energy_AggValue",
+  
+  # VCDeals Group 6: Others / Niche – will be renamed “Manufacturing”
+  "VCDeals_PrimaryIndustry_Hardware_NumDeals",
+  "VCDeals_PrimaryIndustry_Hardware_AggValue",
+  "VCDeals_PrimaryIndustry_Education.Training_NumDeals",
+  "VCDeals_PrimaryIndustry_Education.Training_AggValue",
+  "VCDeals_PrimaryIndustry_Travel...Leisure_NumDeals",
+  "VCDeals_PrimaryIndustry_Travel...Leisure_AggValue",
+  "VCDeals_PrimaryIndustry_Agribusiness_NumDeals",
+  "VCDeals_PrimaryIndustry_Agribusiness_AggValue",
+  "VCDeals_PrimaryIndustry_Outsourcing_NumDeals",
+  "VCDeals_PrimaryIndustry_Outsourcing_AggValue",
+  "VCDeals_PrimaryIndustry_Business.Support.Services_NumDeals",
+  "VCDeals_PrimaryIndustry_Business.Support.Services_AggValue",
+  
+  
+      "PE_FundTypes_Mezzanine_AggValue",
+      "PE_FundTypes_Direct.Lending_AggValue",
+      "PE_FundTypes_Distressed.Debt_AggValue",
+      "PE_FundTypes_Mezzanine_AggValue",
+      "PE_FundTypes_Direct.Lending_AggValue",
+      "PE_FundTypes_Distressed.Debt_AggValue",
+  
+      "PE_FundTypes_Secondaries_NumFunds",
+      "PE_FundTypes_Direct.Secondaries_NumFunds",
+      "PE_FundTypes_Co.Investment_NumFunds",
+      "PE_FundTypes_Co.Investment.Multi.Manager_NumFunds",
+      "PE_FundTypes_Secondaries_AggValue",
+      "PE_FundTypes_Direct.Secondaries_AggValue",
+      "PE_FundTypes_Co.Investment_AggValue",
+      "PE_FundTypes_Co.Investment.Multi.Manager_AggValue",
+      "VCDeals_PrimaryIndustry_Packaging_NumDeals",
+      "VCDeals_PrimaryIndustry_Bottling_NumDeals",
+      "VCDeals_PrimaryIndustry_Heating..Cooling...Ventilation.Equipment.and.Services_NumDeals",
+      "VCDeals_PrimaryIndustry_Packaging_AggValue",
+      "VCDeals_PrimaryIndustry_Bottling_AggValue",
+      "VCDeals_PrimaryIndustry_Heating..Cooling...Ventilation.Equipment.and.Services_AggValue",
+      "PE_FundTypes_Infrastructure.Opportunistic_NumFunds",
+      "PE_FundTypes_Infrastructure.Core_NumFunds",
+      "PE_FundTypes_Infrastructure.Value.Added_NumFunds",
+      "PE_FundTypes_Infrastructure.Opportunistic_AggValue",
+      "PE_FundTypes_Infrastructure.Core_AggValue",
+      "PE_FundTypes_Infrastructure.Value.Added_AggValue",
+     "VCDeals_PrimaryIndustry_Automobiles..Other.Vehicles...Parts_NumDeals",
+  "VCDeals_PrimaryIndustry_Automobiles..Other.Vehicles...Parts_AggValue",
+"BuyoutDeals_PrimaryIndustry_Forestry...Timber_NumDeals",             
+"BuyoutDeals_PrimaryIndustry_Forestry...Timber_AggValue",
+"VCDeals_PrimaryIndustry_Chemicals_NumDeals",                          
+"VCDeals_PrimaryIndustry_Chemicals_AggValue",                         
+"VCDeals_PrimaryIndustry_Mining_NumDeals",                             
+"VCDeals_PrimaryIndustry_Mining_AggValue",
+"PE_FundTypes_Direct.Lending_NumFunds",                                
+"PE_FundTypes_Distressed.Debt_NumFunds",                               
+"PE_FundTypes_Infrastructure.Core.Plus_NumFunds",                      
+"PE_FundTypes_Infrastructure.Core.Plus_AggValue",                      
+"VCDeals_PrimaryIndustry_Forestry...Timber_NumDeals",                  
+"VCDeals_PrimaryIndustry_Forestry...Timber_AggValue",
+"PE_FundTypes_Hybrid.Fund.Of.Funds_NumFunds",                          
+"PE_FundTypes_Hybrid.Fund.Of.Funds_AggValue",
+"PE_FundTypes_Private.Debt.Fund.of.Funds_NumFunds",                    
+"PE_FundTypes_Private.Debt.Fund.of.Funds_AggValue",                    
+"VCDeals_PrimaryIndustry_Biopolymers_NumDeals",                        
+"VCDeals_PrimaryIndustry_Biopolymers_AggValue",                        
+"PE_FundTypes_Mezzanine_NumFunds",                                     
+"VCDeals_PrimaryIndustry_Ship.Building...Repair_NumDeals",             
+"VCDeals_PrimaryIndustry_Ship.Building...Repair_AggValue" 
+  
+)
+
+cols_to_drop_all <- c(cols_to_drop_buyout, cols_to_drop_vc)
+
+# --- Consolidate Primary Industry Columns for BuyoutDeals and VCDeals ---
+preqindata_new <- preqindata_new %>%
+  # --- BuyoutDeals Consolidation ---
+  mutate(
+    BuyoutDeals_PrimaryIndustry_Energy_NumDeals = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Oil...Gas_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Power...Utilities_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Renewable.Energy_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Energy.Storage...Batteries_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Forestry...Timber_NumDeals"
+      
+    )), na.rm = TRUE),
+    BuyoutDeals_PrimaryIndustry_Energy_AggValue = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Oil...Gas_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Power...Utilities_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Renewable.Energy_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Energy.Storage...Batteries_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Forestry...Timber_AggValue"  
+    )), na.rm = TRUE),
+    
+    BuyoutDeals_PrimaryIndustry_Healthcare_NumDeals = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Healthcare_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Healthcare.IT_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Healthcare.Specialists_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Medical.Devices...Equipment_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Pharmaceuticals_NumDeals"
+    )), na.rm = TRUE),
+    BuyoutDeals_PrimaryIndustry_Healthcare_AggValue = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Healthcare_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Healthcare.IT_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Healthcare.Specialists_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Medical.Devices...Equipment_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Pharmaceuticals_AggValue"
+    )), na.rm = TRUE),
+    
+    BuyoutDeals_PrimaryIndustry_DigitalIT_NumDeals = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Software_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_IT.Infrastructure_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_IT.Security.Cybersecurity_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Internet_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Information.Services_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Telecoms_NumDeals"
+    )), na.rm = TRUE),
+    BuyoutDeals_PrimaryIndustry_DigitalIT_AggValue = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Software_AggValue",
+      "BuyoutDeals_PrimaryIndustry_IT.Infrastructure_AggValue",
+      "BuyoutDeals_PrimaryIndustry_IT.Security.Cybersecurity_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Internet_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Information.Services_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Telecoms_AggValue"
+    )), na.rm = TRUE),
+    
+    BuyoutDeals_PrimaryIndustry_EmergingTechMedia_NumDeals = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Electronics_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Media_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Financial.Services_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Agribusiness_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Biotechnology_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Semiconductors_NumDeals"
+    )), na.rm = TRUE),
+    BuyoutDeals_PrimaryIndustry_EmergingTechMedia_AggValue = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Electronics_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Media_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Financial.Services_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Agribusiness_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Biotechnology_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Semiconductors_AggValue"
+    )), na.rm = TRUE),
+    
+    BuyoutDeals_PrimaryIndustry_ConsumerRetail_NumDeals = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Consumer.Products_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Food_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Consumer.Services_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Retail_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Marketing.Advertising_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Business.Support.Services_NumDeals"
+    )), na.rm = TRUE),
+    BuyoutDeals_PrimaryIndustry_ConsumerRetail_AggValue = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Consumer.Products_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Food_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Consumer.Services_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Retail_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Marketing.Advertising_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Business.Support.Services_AggValue"
+    )), na.rm = TRUE),
+    
+    BuyoutDeals_PrimaryIndustry_Industrials_Infrastructure_NumDeals = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Aerospace_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Construction_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Industrial.Machinery_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Rail.Transport_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Ship.Building...Repair_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Logistics...Distribution_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Outsourcing_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Real.Estate.Development...Operating.Companies_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Commercial.Property_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Mining_NumDeals"
+      
+    )), na.rm = TRUE),
+    BuyoutDeals_PrimaryIndustry_Industrials_Infrastructure_AggValue = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Aerospace_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Construction_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Industrial.Machinery_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Rail.Transport_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Ship.Building...Repair_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Logistics...Distribution_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Outsourcing_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Real.Estate.Development...Operating.Companies_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Commercial.Property_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Mining_AggValue"
+      
+    )), na.rm = TRUE),
+    
+    BuyoutDeals_PrimaryIndustry_Others_NumDeals = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Defence_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Environmental.Services_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Hardware_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Transportation.Services_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Travel...Leisure_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Automobiles..Other.Vehicles...Parts_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Education.Training_NumDeals",
+      "BuyoutDeals_PrimaryIndustry_Heating..Cooling...Ventilation.Equipment.and.Services_NumDeals"
+    )), na.rm = TRUE),
+    BuyoutDeals_PrimaryIndustry_Others_AggValue = rowSums(across(c(
+      "BuyoutDeals_PrimaryIndustry_Defence_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Environmental.Services_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Hardware_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Transportation.Services_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Travel...Leisure_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Automobiles..Other.Vehicles...Parts_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Education.Training_AggValue",
+      "BuyoutDeals_PrimaryIndustry_Heating..Cooling...Ventilation.Equipment.and.Services_AggValue"
+    )), na.rm = TRUE),
+    
+    # --- VCDeals Consolidation ---
+    # Group 1A: Digital & IT (VC)
+    VCDeals_PrimaryIndustry_DigitalIT_NumDeals = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Software_NumDeals",
+      "VCDeals_PrimaryIndustry_Internet_NumDeals",
+      "VCDeals_PrimaryIndustry_Telecoms_NumDeals",
+      "VCDeals_PrimaryIndustry_IT.Security.Cybersecurity_NumDeals",
+      "VCDeals_PrimaryIndustry_IT.Infrastructure_NumDeals",
+      "VCDeals_PrimaryIndustry_Information.Services_NumDeals"
+    )), na.rm = TRUE),
+    VCDeals_PrimaryIndustry_DigitalIT_AggValue = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Software_AggValue",
+      "VCDeals_PrimaryIndustry_Internet_AggValue",
+      "VCDeals_PrimaryIndustry_Telecoms_AggValue",
+      "VCDeals_PrimaryIndustry_IT.Security.Cybersecurity_AggValue",
+      "VCDeals_PrimaryIndustry_IT.Infrastructure_AggValue",
+      "VCDeals_PrimaryIndustry_Information.Services_AggValue"
+    )), na.rm = TRUE),
+    
+    # Group 1B: Media & Financial (VC)
+    VCDeals_PrimaryIndustry_MediaFinancial_NumDeals = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Electronics_NumDeals",
+      "VCDeals_PrimaryIndustry_Marketing.Advertising_NumDeals",
+      "VCDeals_PrimaryIndustry_Financial.Services_NumDeals"
+    )), na.rm = TRUE),
+    VCDeals_PrimaryIndustry_MediaFinancial_AggValue = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Electronics_AggValue",
+      "VCDeals_PrimaryIndustry_Marketing.Advertising_AggValue",
+      "VCDeals_PrimaryIndustry_Financial.Services_AggValue"
+    )), na.rm = TRUE),
+    
+    # Group 2: Healthcare & Life Sciences (VC)
+    VCDeals_PrimaryIndustry_Healthcare_NumDeals = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Medical.Devices...Equipment_NumDeals",
+      "VCDeals_PrimaryIndustry_Biotechnology_NumDeals",
+      "VCDeals_PrimaryIndustry_Healthcare.IT_NumDeals",
+      "VCDeals_PrimaryIndustry_Healthcare_NumDeals",
+      "VCDeals_PrimaryIndustry_Healthcare.Specialists_NumDeals"
+    )), na.rm = TRUE),
+    VCDeals_PrimaryIndustry_Healthcare_AggValue = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Medical.Devices...Equipment_AggValue",
+      "VCDeals_PrimaryIndustry_Biotechnology_AggValue",
+      "VCDeals_PrimaryIndustry_Healthcare.IT_AggValue",
+      "VCDeals_PrimaryIndustry_Healthcare_AggValue",
+      "VCDeals_PrimaryIndustry_Healthcare.Specialists_AggValue"
+    )), na.rm = TRUE),
+    
+    # Group 3: Consumer & Retail (VC)
+    VCDeals_PrimaryIndustry_ConsumerRetail_NumDeals = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Consumer.Products_NumDeals",
+      "VCDeals_PrimaryIndustry_Consumer.Services_NumDeals",
+      "VCDeals_PrimaryIndustry_Retail_NumDeals",
+      "VCDeals_PrimaryIndustry_Food_NumDeals"
+    )), na.rm = TRUE),
+    VCDeals_PrimaryIndustry_ConsumerRetail_AggValue = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Consumer.Products_AggValue",
+      "VCDeals_PrimaryIndustry_Consumer.Services_AggValue",
+      "VCDeals_PrimaryIndustry_Retail_AggValue",
+      "VCDeals_PrimaryIndustry_Food_AggValue"
+    )), na.rm = TRUE),
+    
+    # Group 4: Industrials & Infrastructure (VC)
+    VCDeals_PrimaryIndustry_Industrials_Infrastructure_NumDeals = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Transportation.Services_NumDeals",
+      "VCDeals_PrimaryIndustry_Aerospace_NumDeals",
+      "VCDeals_PrimaryIndustry_Commercial.Property_NumDeals",
+      "VCDeals_PrimaryIndustry_Construction_NumDeals",
+      "VCDeals_PrimaryIndustry_Industrial.Machinery_NumDeals",
+      "VCDeals_PrimaryIndustry_Logistics...Distribution_NumDeals",
+      "VCDeals_PrimaryIndustry_Real.Estate.Development...Operating.Companies_NumDeals",
+      "VCDeals_PrimaryIndustry_Automobiles..Other.Vehicles...Parts_NumDeals",
+      "VCDeals_PrimaryIndustry_Mining_NumDeals" ,
+      "VCDeals_PrimaryIndustry_Chemicals_NumDeals"
+    )), na.rm = TRUE),
+    VCDeals_PrimaryIndustry_Industrials_Infrastructure_AggValue = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Transportation.Services_AggValue",
+      "VCDeals_PrimaryIndustry_Aerospace_AggValue",
+      "VCDeals_PrimaryIndustry_Commercial.Property_AggValue",
+      "VCDeals_PrimaryIndustry_Construction_AggValue",
+      "VCDeals_PrimaryIndustry_Industrial.Machinery_AggValue",
+      "VCDeals_PrimaryIndustry_Logistics...Distribution_AggValue",
+      "VCDeals_PrimaryIndustry_Real.Estate.Development...Operating.Companies_AggValue",
+      "VCDeals_PrimaryIndustry_Automobiles..Other.Vehicles...Parts_AggValue",
+      "VCDeals_PrimaryIndustry_Chemicals_AggValue",
+      "VCDeals_PrimaryIndustry_Mining_AggValue"
+    )), na.rm = TRUE),
+    
+    # Group 5: Energy & Resources (VC)
+    VCDeals_PrimaryIndustry_Energy_NumDeals = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Energy.Storage...Batteries_NumDeals",
+      "VCDeals_PrimaryIndustry_Power...Utilities_NumDeals",
+      "VCDeals_PrimaryIndustry_Renewable.Energy_NumDeals"
+    )), na.rm = TRUE),
+    VCDeals_PrimaryIndustry_Energy_AggValue = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Energy.Storage...Batteries_AggValue",
+      "VCDeals_PrimaryIndustry_Power...Utilities_AggValue",
+      "VCDeals_PrimaryIndustry_Renewable.Energy_AggValue"
+    )), na.rm = TRUE),
+    
+    # Group 6: Others / Niche – rename this group to "Manufacturing" for VCDeals
+    VCDeals_PrimaryIndustry_Manufacturing_NumDeals = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Hardware_NumDeals",
+      "VCDeals_PrimaryIndustry_Education.Training_NumDeals",
+      "VCDeals_PrimaryIndustry_Travel...Leisure_NumDeals",
+      "VCDeals_PrimaryIndustry_Agribusiness_NumDeals",
+      "VCDeals_PrimaryIndustry_Outsourcing_NumDeals",
+      "VCDeals_PrimaryIndustry_Business.Support.Services_NumDeals"
+    )), na.rm = TRUE),
+    VCDeals_PrimaryIndustry_Manufacturing_AggValue = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Hardware_AggValue",
+      "VCDeals_PrimaryIndustry_Education.Training_AggValue",
+      "VCDeals_PrimaryIndustry_Travel...Leisure_AggValue",
+      "VCDeals_PrimaryIndustry_Agribusiness_AggValue",
+      "VCDeals_PrimaryIndustry_Outsourcing_AggValue",
+      "VCDeals_PrimaryIndustry_Business.Support.Services_AggValue"
+    )), na.rm = TRUE)
+  ) %>%
+  # Drop the original detailed primary industry columns for BuyoutDeals and VCDeal
+  
+  ### Additional Consolidation for Non–Primary Industry Columns ###
+  # Update VCDeals Investment Stage (keeping original naming convention)
+  mutate(
+    VCDeals_InvestmentStage_OtherVenture_NumDeals = rowSums(across(c(
+      "VCDeals_InvestmentStage_Unspecified.Round_NumDeals",
+      "VCDeals_InvestmentStage_PIPE_NumDeals",
+      "VCDeals_InvestmentStage_Merger_NumDeals",
+      "VCDeals_InvestmentStage_Venture.Debt_NumDeals",
+      "VCDeals_InvestmentStage_Add.on_NumDeals",
+      "VCDeals_InvestmentStage_Growth.Capital.Expansion_NumDeals"
+    )), na.rm = TRUE),
+    VCDeals_InvestmentStage_OtherVenture_AggValue = rowSums(across(c(
+      "VCDeals_InvestmentStage_Unspecified.Round_AggValue",
+      "VCDeals_InvestmentStage_PIPE_AggValue",
+      "VCDeals_InvestmentStage_Merger_AggValue",
+      "VCDeals_InvestmentStage_Venture.Debt_AggValue",
+      "VCDeals_InvestmentStage_Add.on_AggValue",
+      "VCDeals_InvestmentStage_Growth.Capital.Expansion_AggValue"
+    )), na.rm = TRUE)
+  ) %>%
+  # Drop original VCDeals Investment Stage columns (except those now aggregated)
+  select(-c(
+    "VCDeals_InvestmentStage_Unspecified.Round_NumDeals",
+    "VCDeals_InvestmentStage_Unspecified.Round_AggValue",
+    "VCDeals_InvestmentStage_PIPE_NumDeals",
+    "VCDeals_InvestmentStage_PIPE_AggValue",
+    "VCDeals_InvestmentStage_Merger_NumDeals",
+    "VCDeals_InvestmentStage_Merger_AggValue",
+    "VCDeals_InvestmentStage_Venture.Debt_NumDeals",
+    "VCDeals_InvestmentStage_Venture.Debt_AggValue",
+    "VCDeals_InvestmentStage_Add.on_NumDeals",
+    "VCDeals_InvestmentStage_Add.on_AggValue"
+  )) %>%
+  
+  # Consolidate BuyoutDeals Investment Type into "BuyoutDeals_PrimaryIndustry_InvestmentType_Other"
+  mutate(
+    BuyoutDeals_InvestmentType_Other_NumDeals = rowSums(across(c(
+      "BuyoutDeals_InvestmentType_Add.on_NumDeals",
+      "BuyoutDeals_InvestmentType_Public.To.Private_NumDeals",
+      "BuyoutDeals_InvestmentType_PIPE_NumDeals",
+      "BuyoutDeals_InvestmentType_Recapitalisation_NumDeals",
+      "BuyoutDeals_InvestmentType_Merger_NumDeals",
+      "BuyoutDeals_InvestmentType_Restructuring_NumDeals"
+    )), na.rm = TRUE),
+    BuyoutDeals_InvestmentType_Other_AggValue = rowSums(across(c(
+      "BuyoutDeals_InvestmentType_Add.on_AggValue",
+      "BuyoutDeals_InvestmentType_Public.To.Private_AggValue",
+      "BuyoutDeals_InvestmentType_PIPE_AggValue",
+      "BuyoutDeals_InvestmentType_Recapitalisation_AggValue",
+      "BuyoutDeals_InvestmentType_Merger_AggValue",
+      "BuyoutDeals_InvestmentType_Restructuring_AggValue"
+    )), na.rm = TRUE)
+  ) %>%
+  select(-c(
+    "BuyoutDeals_InvestmentType_Add.on_NumDeals",
+    "BuyoutDeals_InvestmentType_Add.on_AggValue",
+    "BuyoutDeals_InvestmentType_Public.To.Private_NumDeals",
+    "BuyoutDeals_InvestmentType_Public.To.Private_AggValue",
+    "BuyoutDeals_InvestmentType_PIPE_NumDeals",
+    "BuyoutDeals_InvestmentType_PIPE_AggValue",
+    "BuyoutDeals_InvestmentType_Recapitalisation_NumDeals",
+    "BuyoutDeals_InvestmentType_Recapitalisation_AggValue",
+    "BuyoutDeals_InvestmentType_Merger_NumDeals",
+    "BuyoutDeals_InvestmentType_Merger_AggValue",
+    "BuyoutDeals_InvestmentType_Restructuring_NumDeals",
+    "BuyoutDeals_InvestmentType_Restructuring_AggValue"
+  )) %>%
+  
+  # Consolidate PE Fund Types into "PE_FundTypes_Venture_Early"
+  mutate(
+    PE_FundTypes_Venture_Early_NumFunds = rowSums(across(c(
+      "PE_FundTypes_Venture..General._NumFunds",
+      "PE_FundTypes_Early.Stage_NumFunds",
+      "PE_FundTypes_Early.Stage..Seed_NumFunds"
+    )), na.rm = TRUE),
+    PE_FundTypes_Venture_Early_AggValue = rowSums(across(c(
+      "PE_FundTypes_Venture..General._AggValue",
+      "PE_FundTypes_Early.Stage_AggValue",
+      "PE_FundTypes_Early.Stage..Seed_AggValue"
+    )), na.rm = TRUE)
+  ) %>%
+  select(-c(
+    "PE_FundTypes_Venture..General._NumFunds",
+    "PE_FundTypes_Venture..General._AggValue",
+    "PE_FundTypes_Early.Stage_NumFunds",
+    "PE_FundTypes_Early.Stage_AggValue",
+    "PE_FundTypes_Early.Stage..Seed_NumFunds",
+    "PE_FundTypes_Early.Stage..Seed_AggValue"
+  )) %>%
+  
+  # Additional Non–Primary Industry Consolidations
+  mutate(
+    # Consolidate PE Secondaries & Co-Investment into "PE_FundTypes_Secondaries_Broader"
+    PE_FundTypes_Secondaries_NumFunds = rowSums(across(c(
+      "PE_FundTypes_Secondaries_NumFunds",
+      "PE_FundTypes_Direct.Secondaries_NumFunds",
+      "PE_FundTypes_Co.Investment_NumFunds",
+      "PE_FundTypes_Co.Investment.Multi.Manager_NumFunds"
+    )), na.rm = TRUE),
+    PE_FundTypes_Secondaries_AggValue = rowSums(across(c(
+      "PE_FundTypes_Secondaries_AggValue",
+      "PE_FundTypes_Direct.Secondaries_AggValue",
+      "PE_FundTypes_Co.Investment_AggValue",
+      "PE_FundTypes_Co.Investment.Multi.Manager_AggValue"
+    )), na.rm = TRUE)
+  ) %>%
+  mutate(
+    # Consolidate PE Infrastructure Fund Types into "PE_FundTypes_Infrastructure_FundTypes"
+    PE_FundTypes_Infrastructure_NumFunds = rowSums(across(c(
+      "PE_FundTypes_Infrastructure.Opportunistic_NumFunds",
+      "PE_FundTypes_Infrastructure.Core_NumFunds",
+      "PE_FundTypes_Infrastructure.Value.Added_NumFunds"
+    )), na.rm = TRUE),
+    PE_FundTypes_Infrastructure_AggValue = rowSums(across(c(
+      "PE_FundTypes_Infrastructure.Opportunistic_AggValue",
+      "PE_FundTypes_Infrastructure.Core_AggValue",
+      "PE_FundTypes_Infrastructure.Value.Added_AggValue"
+    )), na.rm = TRUE)
+  ) %>%
+  mutate(
+    # Consolidate Fund-of-Funds into "PE_FundTypes_PrivateCredit_FoF"
+    PE_FundTypes_FoF_NumFunds = rowSums(across(c(
+      "PE_FundTypes_Hybrid.Fund.Of.Funds_NumFunds",
+      "PE_FundTypes_Fund.of.Funds_NumFunds",
+      "PE_FundTypes_Private.Debt.Fund.of.Funds_NumFunds"
+    )), na.rm = TRUE),
+    PE_FundTypes_FoF_AggValue = rowSums(across(c(
+      "PE_FundTypes_Hybrid.Fund.Of.Funds_AggValue",
+      "PE_FundTypes_Fund.of.Funds_AggValue",
+      "PE_FundTypes_Private.Debt.Fund.of.Funds_AggValue"
+    )), na.rm = TRUE)
+  ) %>%
+  mutate(
+    # Consolidate Private Credit details into "PE_FundTypes_PrivateCredit"
+    PE_FundTypes_PrivateCredit_NumFunds = rowSums(across(c(
+      "PE_FundTypes_Mezzanine_NumFunds",
+      "PE_FundTypes_Direct.Lending_NumFunds",
+      "PE_FundTypes_Distressed.Debt_NumFunds"
+    )), na.rm = TRUE),
+    PE_FundTypes_PrivateCredit_AggValue = rowSums(across(c(
+      "PE_FundTypes_Mezzanine_AggValue",
+      "PE_FundTypes_Direct.Lending_AggValue",
+      "PE_FundTypes_Distressed.Debt_AggValue"
+    )), na.rm = TRUE)
+  ) %>%
+  mutate(
+    # Consolidate VCDeals Manufacturing (Packaging + Bottling + Heating...Ventilation) 
+    VCDeals_PrimaryIndustry_Manufacturing_NumDeals = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Packaging_NumDeals",
+      "VCDeals_PrimaryIndustry_Bottling_NumDeals",
+      "VCDeals_PrimaryIndustry_Heating..Cooling...Ventilation.Equipment.and.Services_NumDeals"
+    )), na.rm = TRUE),
+    VCDeals_PrimaryIndustry_Manufacturing_AggValue = rowSums(across(c(
+      "VCDeals_PrimaryIndustry_Packaging_AggValue",
+      "VCDeals_PrimaryIndustry_Bottling_AggValue",
+      "VCDeals_PrimaryIndustry_Heating..Cooling...Ventilation.Equipment.and.Services_AggValue"
+    )), na.rm = TRUE)
+  ) %>% 
+  select(-all_of(cols_to_drop_all))
+colnames(preqindata_new)
+
+
+# write.csv(preqindata_new, "LP_data_cleaned.csv")
+
+```
+
+# See how many values are missing committed capital values
+```{r}
+# Assume preqindata_new is your data frame
+
+# Identify all columns with the pattern "_NumFunds"
+num_funds_columns <- grep("_NumFunds$", names(preqindata_new), value = TRUE)
+
+# Create the corresponding aggregated value column names by replacing the suffix
+agg_value_columns <- sub("_NumFunds$", "_AggValue", num_funds_columns)
+
+# Initialize an empty list to store the results for each pair
+results_list <- list()
+
+# Loop over each pair of columns
+for (i in seq_along(num_funds_columns)) {
+  num_col <- num_funds_columns[i]
+  agg_col <- agg_value_columns[i]
+  
+  # Check if the aggregated column exists in the dataset
+  if (agg_col %in% names(preqindata_new)) {
+    # Find rows where the number of funds is greater than 0 but the aggregated value is 0
+    condition <- preqindata_new[[num_col]] > 0 & preqindata_new[[agg_col]] == 0
+    
+    # If there are any such cases, subset the data and record the pair name
+    if (any(condition, na.rm = TRUE)) {
+      subset_data <- preqindata_new[condition, ]
+      subset_data$VariablePair <- num_col  # optional: indicate which variable pair is in use
+      results_list[[num_col]] <- subset_data
+    }
+  }
+}
+
+# Combine all the results into one data frame (if any cases were found)
+if (length(results_list) > 0) {
+  result <- do.call(rbind, results_list)
+  print(result)
+} else {
+  print("No cases found where numfunds > 0 and the corresponding agg value equals 0.")
+}
+
+## rename FundType column to LPType
+
+```
+
+
+```{r}
+preqindata_new <- preqindata_new %>%
+  rename(LPType = FundType)
+
+
+preqindata_new <- preqindata_new %>% 
+  rowwise() %>% 
+  mutate(
+    # Extract the sentence that contains any of the keywords and also a number
+    extracted_sentence = {
+      sentences <- str_split(PE_Preferences, "\\.\\s*")[[1]]
+      # Define a keyword pattern (case-insensitive)
+      keyword_pattern <- regex("invests|commits|ticket size", ignore_case = TRUE)
+      # Look for sentences that have at least one digit and the keywords
+      matching_sentences <- sentences[
+        str_detect(sentences, keyword_pattern) & str_detect(sentences, "\\d+")
+      ]
+      if(length(matching_sentences) > 0) matching_sentences[1] else NA_character_
+    },
+    # Extract numbers with units and convert to a numeric value in millions
+    ticket_size_millions = {
+      if(!is.na(extracted_sentence)) {
+        # Regex to capture numbers (with optional decimals) and a unit (million, billion, or thousand)
+        matches <- str_match_all(extracted_sentence, "(\\d+(\\.\\d+)?)\\s*(million|billion|thousand)")[[1]]
+        if(nrow(matches) > 0) {
+          # Extract the numeric parts and convert to numbers
+          numbers <- as.numeric(matches[,2])
+          # Use the first matched unit (assumed consistent)
+          unit <- tolower(matches[1,4])
+          # If more than one number is found, average the first and last number
+          value <- if(length(numbers) >= 2) mean(c(numbers[1], numbers[length(numbers)])) else numbers[1]
+          # Convert the value to millions based on the unit
+          if(unit == "million") {
+            value_converted <- value
+          } else if(unit == "billion") {
+            value_converted <- value * 1000
+          } else if(unit == "thousand") {
+            value_converted <- value / 1000
+          } else {
+            value_converted <- NA_real_
+          }
+          value_converted
+        } else {
+          NA_real_
+        }
+      } else {
+        NA_real_
+      }
+    }
+  ) %>% 
+  ungroup()
+
+
+preqindata_new <- preqindata_new %>% 
+  mutate(ticket_size_millions = case_when(
+    LP_Name == "Nassau Reinsurance" ~ 15,
+    LP_Name == "Wisconsin" ~ 17.5
+  ))
+
+preqindata_new <- preqindata_new %>%
+  mutate(
+    AUM_line = as.numeric(gsub("[^0-9.]", "", AUM_line))
+  )
+
+preqindata_new <- preqindata_new %>%
+  mutate(AUM_line = case_when(
+    LP_Name == "American General Life" ~ 161000,
+    LP_Name == "CPP" ~ 594448,
+    LP_Name == "Merseyside Pension Fund" ~ 13708,
+    LP_Name == "Royal Borough London" ~ 1376,
+    LP_Name == "CDPQ" ~ 368428,
+    LP_Name == "Manulife Financial" ~ 295834,
+    LP_Name == "Clal Insurance" ~ 97307,
+    LP_Name == "Korea National Pension Service" ~ 811460,
+    TRUE ~ AUM_line  # Retain original value for all other LPs
+  ))
+
+preqindata_new <- preqindata_new %>%
+  mutate(PE_Snapshot_Current_MN = case_when(
+    LP_Name == "Duke" ~ .15 * AUM_line,
+    LP_Name == "Texas A&M" ~ .26 * AUM_line,
+    LP_Name == "Nassau Reinsurance" ~ ticket_size_millions * PE_Commitments_NumberOfFunds,
+    LP_Name == "Wisconsin" ~ ticket_size_millions * PE_Commitments_NumberOfFunds,
+    LP_Name == "Northwestern Memorial Healthcare" ~ ticket_size_millions * PE_Commitments_NumberOfFunds,
+    TRUE ~ PE_Snapshot_Current_MN
+  ))
+
+preqindata_new <- preqindata_new %>%
+  mutate(PE_Commitments_NumberOfFunds = case_when(
+    LP_Name == "Liberty Mutual" ~ 218,
+    LP_Name == "State of Hawaii Retirement" ~ 308,
+    LP_Name == "Pepperdine" ~ 35,
+    LP_Name == "Oregon State" ~ 31,
+    LP_Name == "Mount Holyoke" ~ 37,
+    LP_Name == "Pomona" ~ 43,
+    LP_Name == "U Louisville" ~ 59,
+    LP_Name == "Macalester College" ~ 24,
+    LP_Name == "Travelers Companies" ~ 356,
+    LP_Name == "SMU" ~ 50,
+    TRUE ~ PE_Commitments_NumberOfFunds
+  ))
+
+median_ratio <- median(preqindata_new$ticket_size_millions / preqindata_new$PE_Snapshot_Current_MN, na.rm = TRUE)
+
+# Impute missing ticket_size_millions based on the median ratio and committed capital
+preqindata_new <- preqindata_new %>%
+  mutate(ticket_size_millions = ifelse(is.na(ticket_size_millions),
+                                        PE_Snapshot_Current_MN * median_ratio,
+                                        ticket_size_millions))
+
+
+df<- df %>% left_join(select(preqindata_new, LP_Name, ticket_size_millions), by = c("LP" = "LP_Name"))
+
+```
+```{r}
+# Define a helper function to compute a weighted mean that returns NA if all values are missing
+library(dplyr)
+
+# First, convert the performance metric columns to numeric.
+df <- df %>%
+  mutate(
+    `NET.IRR....` = as.numeric(`NET.IRR....`),
+    `NET.MULTIPLE..X.` = as.numeric(`NET.MULTIPLE..X.`),
+    `DPI....` = as.numeric(`DPI....`),
+    `RVPI....` = as.numeric(`RVPI....`),
+    `MEDIAN.BENCHMARK.NET.IRR....` = as.numeric(`MEDIAN.BENCHMARK.NET.IRR....`),
+    `MEDIAN BENCHMARK NET MULTIPLE (X)` = as.numeric(`MEDIAN BENCHMARK NET MULTIPLE (X)`)
+  )
+
+# Define a helper function that ensures x and w are numeric and returns NA if no valid weighted mean can be computed.
+safe_weighted_mean <- function(x, w) {
+  x <- as.numeric(x)
+  w <- as.numeric(w)
+  out <- weighted.mean(x, w, na.rm = TRUE)
+  if (is.nan(out)) NA_real_ else out
+}
+
+# Now compute portfolio-level performance, grouping by LP.
+portfolio_perf <- df %>%
+  group_by(LP) %>%  # Group by LP; each LP has multiple funds.
+  summarise(
+    total_ticket = sum(ticket_size_millions, na.rm = TRUE),
+    
+    # Compute weighted averages for performance metrics.
+    portfolio_IRR = safe_weighted_mean(`NET.IRR....`, ticket_size_millions),
+    portfolio_multiple = safe_weighted_mean(`NET.MULTIPLE..X.`, ticket_size_millions),
+    portfolio_DPI = safe_weighted_mean(`DPI....`, ticket_size_millions),
+    portfolio_RVPI = safe_weighted_mean(`RVPI....`, ticket_size_millions),
+    
+    # Composite metric: Total Value Multiple (TVM) = DPI + RVPI; if either is NA, result is NA.
+    portfolio_TVM = ifelse(is.na(portfolio_DPI) | is.na(portfolio_RVPI),
+                           NA_real_,
+                           portfolio_DPI + portfolio_RVPI),
+    
+    # Weighted averages for benchmark metrics.
+    portfolio_bench_IRR = safe_weighted_mean(`MEDIAN.BENCHMARK.NET.IRR....`, ticket_size_millions),
+    portfolio_bench_multiple = safe_weighted_mean(`MEDIAN BENCHMARK NET MULTIPLE (X)`, ticket_size_millions),
+    
+    # Excess performance versus benchmarks.
+    excess_IRR = ifelse(is.na(portfolio_IRR) | is.na(portfolio_bench_IRR),
+                        NA_real_,
+                        portfolio_IRR - portfolio_bench_IRR),
+    excess_multiple = ifelse(is.na(portfolio_multiple) | is.na(portfolio_bench_multiple),
+                             NA_real_,
+                             portfolio_multiple - portfolio_bench_multiple)
+  ) %>%
+  ungroup()
+
+
+```
+```{r}
+library(dplyr)
+
+# Helper function from your snippet
+safe_weighted_mean <- function(x, w) {
+  x <- as.numeric(x)
+  w <- as.numeric(w)
+  out <- weighted.mean(x, w, na.rm = TRUE)
+  if (is.nan(out)) NA_real_ else out
+}
+
+preqindata_new %>% select(LPType, LP_Name)
+preqindata_new <- preqindata_new %>% mutate(LPType = case_when(
+  LPType %in% c("Insurance Company Canada", "Insurance Company Israel") ~ "Insurance Company",
+  LPType %in% c("Public Pension Fund Canada", "Public Pension Fund South Korea") ~ "Public Pension Fund",
+  LP_Name == "American General Life" ~ "Insurance Company",
+  TRUE ~ LPType
+))
+
+```
+
+
+```{r}
+df <- df %>% left_join(select(preqindata_new, LPType, LP_Name, AUM_line), by = c("LP" = "LP_Name"))
+table(df$LPType)
+# 1. Weighted IRR at the LP–Vintage level
+df_lp_vintage <- df %>%
+  mutate(
+    NET.IRR.... = as.numeric(NET.IRR....),
+    ticket_size_millions = as.numeric(ticket_size_millions)
+  ) %>%
+  group_by(LP, LPType, VINTAGE = `VINTAGE...INCEPTION.YEAR`) %>%
+  summarise(
+    # Weighted IRR among the funds from the same vintage, for each LP
+    vintage_weighted_IRR = safe_weighted_mean(NET.IRR...., ticket_size_millions),
+    .groups = "drop"
+  )
+
+df_vintage_summary <- df_lp_vintage %>%
+  group_by(LPType, VINTAGE) %>%
+  summarise(
+    median_IRR = median(vintage_weighted_IRR, na.rm = TRUE),
+    min_IRR = min(vintage_weighted_IRR, na.rm = TRUE),
+    max_IRR = max(vintage_weighted_IRR, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
+# Filter the summary data to include only vintages 2020 or later
+df_vintage_summary_filtered <- df_vintage_summary %>% 
+  filter(VINTAGE <= 2020 & VINTAGE >= 1990)
+
+# Plot the filtered data
+p <- ggplot(df_vintage_summary_filtered, aes(x = VINTAGE, y = median_IRR, group = LPType)) +
+  geom_ribbon(
+    aes(ymin = min_IRR, ymax = max_IRR, fill = LPType),
+    alpha = 0.2
+  ) +
+  geom_line(aes(color = LPType), size = 1) +
+  facet_wrap(~ LPType) +
+  labs(
+    title = "Fund-Level Performance by LP Type (1990 - 2020)",
+    x = "Vintage Year",
+    y = "Weighted Median IRR (%)",
+    fill = "Confidence Interval\n(min, max)",
+    color = "LP Type"
+  ) +
+  theme_minimal() +
+  theme(
+    # Increase spacing around the plot if needed
+    plot.margin = margin(1, 1, 1, 1, "cm")
+  )
+
+# Print the plot
+print(p)
+
+# Save the plot with wider dimensions (12x8 inches)
+ggsave("vintage_performance.png", plot = p, width = 12, height = 8, dpi = 300)
+
+p_overlay <- ggplot(df_vintage_summary_filtered, aes(x = VINTAGE, y = median_IRR, color = LPType)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Overlay of Fund-Level Performance (Vintages >= 2020) by LP Type",
+    x = "Vintage Year",
+    y = "Weighted Median IRR (%)",
+    color = "LP Type"
+  ) +
+  theme_minimal()
+
+# Print the plot
+print(p_overlay)
+
+p_overlay_with_ci <- ggplot(df_vintage_summary_filtered, aes(x = VINTAGE, y = median_IRR, group = LPType)) +
+  geom_ribbon(aes(ymin = min_IRR, ymax = max_IRR, fill = LPType), alpha = 0.2) +
+  geom_line(aes(color = LPType), size = 1) +
+  labs(
+    title = "Private Equity Performance by LP Type (1990-2020)",
+    x = "Vintage Year",
+    y = "Weighted Median IRR (%)",
+    fill = "Confidence Interval\n(min, max)",
+    color = "LP Type"
+  ) +
+  theme_minimal()
+
+# Print the plot
+print(p_overlay_with_ci)
+
+```
+```{r}
+# Compute median IRR by Asset Class and Vintage
+df_asset_vintage <- df %>%
+  group_by(`ASSET CLASS`, VINTAGE = `VINTAGE...INCEPTION.YEAR`) %>%
+  summarise(median_IRR = median(`NET.IRR....`, na.rm = TRUE),
+            .groups = "drop") %>%
+  filter(`ASSET CLASS` %in% c("Private Equity", "Venture Capital"),VINTAGE <= 2020)
+
+# Plot the median IRR over time, colored by Asset Class
+p_asset_line <- ggplot(df_asset_vintage, aes(x = VINTAGE, y = median_IRR, color = `ASSET CLASS`)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Median IRR Over Vintages by Asset Class",
+    x = "Vintage Year",
+    y = "Median IRR (%)",
+    color = "Asset Class"
+  ) +
+  theme_minimal()
+print(p_asset_line)
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+table(df$PE..PRIMARY.STRATEGY)
+# Identify the top 3 primary strategies by count
+
+
+# Filter df for only these top strategies
+df_top <- df %>% 
+  filter(`PE..PRIMARY.STRATEGY` %in% c("Buyout", "Growth", "Secondaries", "Fund of Funds"))
+
+# Compute median IRR for each primary strategy and vintage year
+df_strategy_vintage <- df_top %>%
+  mutate(`NET.IRR....` = as.numeric(`NET.IRR....`)) %>%  # ensure IRR is numeric
+  group_by(`PE..PRIMARY.STRATEGY`, VINTAGE = `VINTAGE...INCEPTION.YEAR`) %>%
+  summarise(
+    median_IRR = median(`NET.IRR....`, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Plot the median IRR over vintages for the top 3 strategies
+p_strategy <- ggplot(df_strategy_vintage, aes(x = VINTAGE, y = median_IRR, color = `PE..PRIMARY.STRATEGY`)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Median IRR Over Vintages Based on Primary Strategies",
+    x = "Vintage Year",
+    y = "Median IRR (%)",
+    color = "Primary Strategy"
+  ) +
+  theme_minimal()
+
+print(p_strategy)
+
+```
+```{r}
+library(tidytext)
+library(dplyr)
+library(wordcloud)
+library(stringr)
+
+# Define a vector of strategy-related keywords (all in lower-case) 
+# (now including "cambridge_associates" instead of "cambridge")
+strategy_keywords <- c("advisor", "consultant", "in-house", "outside", 
+                       "cambridge_associates", "stepstone", "nepc", "hamilton", "meketa",
+                       "investment", "primary", "secondary", "venture", "buyout", 
+                       "growth", "direct")
+
+# Pre-process text: convert to lower-case and join "cambridge associates" into one token
+preqindata_new <- preqindata_new %>% 
+  mutate(
+    PE_Summary = str_to_lower(PE_Summary),
+    PE_Summary = str_replace_all(PE_Summary, regex("cambridge associates", ignore_case = TRUE), "cambridge_associates")
+  )
+
+# 1. Unnest tokens from the text
+df_text <- preqindata_new %>%
+  select(LP_Name, PE_Summary) %>%
+  unnest_tokens(word, PE_Summary)
+
+# 2. Remove stopwords
+data("stop_words")
+df_text_clean <- df_text %>%
+  anti_join(stop_words, by = "word")
+
+# 3. Count word frequency
+word_freq <- df_text_clean %>%
+  count(word, sort = TRUE)
+
+# 4. Filter out words with frequency less than 5
+word_freq_filtered <- word_freq %>% 
+  filter(n >= 5)
+
+# 5. Flag words that are strategy-related
+word_freq_filtered <- word_freq_filtered %>%
+  mutate(is_strategy = if_else(word %in% strategy_keywords, TRUE, FALSE))
+
+# 6. Create a color vector: strategy words in red, others in blue
+word_colors <- ifelse(word_freq_filtered$is_strategy, "red", "blue")
+
+# 7. Generate the word cloud with ordered.colors = TRUE to preserve the mapping
+wordcloud(
+  words = word_freq_filtered$word,
+  freq = word_freq_filtered$n,
+  scale = c(4, 0.5),
+  min.freq = 5,
+  max.words = Inf,
+  random.order = FALSE,
+  random.color = FALSE,
+  rot.per = 0.1,
+  colors = word_colors,
+  ordered.colors = TRUE,
+  fixed.asp = TRUE
+)
+
+```
+
+```{r}
+library(dplyr)
+library(purrr)
+library(igraph)
+
+# --- Step 0: Define the LP subset ---
+
+# Sample 5 LPs from each LP type from preqindata_new.
+# Ensure preqindata_new has columns: LP_Name, AUM_line, LPType.
+subset_LPs <- preqindata_new %>%
+  group_by(LPType) %>%
+  sample_n(5) %>%
+  ungroup() %>%
+  pull(LP_Name)
+
+# --- Step 1: Create LP-fund relationships using FUND.ID ---
+lp_funds <- df %>% 
+  select(LP, Fund = `FUND.ID`) %>% 
+  distinct()
+
+# Filter to only include LPs in the subset.
+lp_funds <- lp_funds %>% 
+  filter(LP %in% subset_LPs)
+
+# --- Step 2: Create a list of funds for each LP ---
+lp_funds_list <- lp_funds %>%
+  group_by(LP) %>%
+  summarise(Funds = list(unique(Fund)), .groups = "drop")
+
+# --- Step 3: Generate all unique LP pairs and compute shared funds ---
+lp_pairs <- lp_funds_list %>%
+  rename(LP1 = LP, Funds1 = Funds) %>%
+  inner_join(lp_funds_list %>% rename(LP2 = LP, Funds2 = Funds),
+             by = character()) %>%
+  # Ensure unique pairs: exclude self-pairs and keep only one ordering (LP1 < LP2)
+  filter(LP1 < LP2) %>%
+  mutate(shared = map2_int(Funds1, Funds2, ~ length(intersect(.x, .y)))) %>%
+  filter(shared > 0) %>%
+  select(LP1, LP2, shared)
+
+# --- Step 4: Create the network graph ---
+g_lp <- graph_from_data_frame(lp_pairs, directed = FALSE)
+
+# --- Step 5: Attach LP-level attributes from preqindata_new ---
+# Preqindata_new should have: LP_Name, AUM_line, LPType.
+lp_attr <- preqindata_new %>% 
+  filter(LP_Name %in% subset_LPs) %>%
+  select(LP_Name, AUM_line, LPType)
+
+V(g_lp)$AUM_line <- lp_attr$AUM_line[match(V(g_lp)$name, lp_attr$LP_Name)]
+V(g_lp)$LPType <- lp_attr$LPType[match(V(g_lp)$name, lp_attr$LP_Name)]
+
+# --- Step 6: Assign colors based on LPType ---
+V(g_lp)$color <- ifelse(V(g_lp)$LPType == "Insurance Company", "red",
+                        ifelse(V(g_lp)$LPType == "Public Pension Fund", "blue", "green"))
+
+# --- Step 7: Define a scaling factor for node sizes ---
+scaling_factor <- 10000 # Adjust as needed
+
+# --- Step 8: Plot the network ---
+# If you want to specify weights in the layout, you can do so:
+library(dplyr)
+library(igraph)
+
+# (Assuming g_lp is already created as in previous steps.)
+
+# Use Kamada-Kawai layout with weights (so that higher shared funds pull nodes together)
+layout_kk <- layout_with_kk(g_lp, weights = E(g_lp)$shared)
+
+# Define scaling factors
+node_scaling_factor <- 1/10  # Adjust as needed; we're using sqrt transformation for AUM
+edge_scaling_factor <- 15    # Adjust to reduce edge thickness
+
+# Open a PNG device for a larger plot
+png("lp_network_large.png", width = 1600, height = 1200, res = 150)
+
+# Update vertex colors: 
+# Use "red" for Insurance Company, "skyblue" for Public Pension Fund (lighter blue), and "green" for others.
+V(g_lp)$color <- ifelse(V(g_lp)$LPType == "Insurance Company", "red",
+                        ifelse(V(g_lp)$LPType == "Public Pension Fund", "skyblue", "green"))
+
+# Plot the network graph with the Kamada-Kawai layout.
+plot(g_lp,
+     layout = layout_kk,
+     vertex.size = as.numeric(sqrt(V(g_lp)$AUM_line + 1)) * node_scaling_factor,
+     vertex.label = V(g_lp)$name,
+     vertex.label.cex = 0.8,         # adjust text size
+     vertex.label.color = "black",   # change label color
+     vertex.label.font = 2,          # bold labels
+     vertex.label.family = "sans",   # use sans-serif font
+     vertex.label.dist = 0.5,        # distance from the node
+     vertex.label.degree = 0,        # angle (0 = right side)
+     edge.width = E(g_lp)$shared / edge_scaling_factor,
+     main = "Interconnectedness of LP Subset"
+)
+
+# Add a legend for node colors (LPType)
+legend("topleft",
+       legend = c("Insurance Company", "Public Pension Fund", "Endowment"),
+       col = c("red", "skyblue", "green"),
+       pch = 16, pt.cex = 1.5,
+       title = "LP Type",
+       bty = "n")
+
+dev.off()
+
+```
+
+## processing text data
+
+```{r}
+# Load required libraries
+library(dplyr)
+library(stringr)
+
+# Define a vector of consultant names (all in lowercase for matching)
+consultants <- c("cambridge_associates", 
+                 "callan associates", 
+                 "aon investments", 
+                 "wilshire associates", 
+                 "nepc", 
+                 "stepstone group", 
+                 "blackrock investment management", 
+                 "aksia", 
+                 "meketa investment group", 
+                 "cliffwater")
+
+# Create dummy variables for each consultant
+for (cons in consultants) {
+  # Create a safe column name by replacing spaces with underscores
+  dummy_name <- paste0("consultant_", str_replace_all(cons, "\\s+", "_"))
+  # Create the dummy: 1 if the consultant name is found in PE_Preferences, 0 otherwise.
+  preqindata_new[[dummy_name]] <- ifelse(str_detect(tolower(preqindata_new$PE_Summary), cons), 1, 0)
+}
+
+# Create an in-house dummy variable:
+# It equals 1 when none of the consultant names are mentioned in PE_Preferences.
+# We build a regex pattern that matches any of the consultant names.
+regex_pattern <- paste(consultants, collapse = "|")
+preqindata_new$in_house <- ifelse(!str_detect(tolower(preqindata_new$PE_Summary), regex_pattern), 1, 0)
+
+# remove GPs with NA value
+df <- df %>%
+  filter(!is.na(`FUND MANAGER`))
+
+
+# Define a helper function to compute quartile bins
+create_close_bin <- function(x) {
+  # Compute quantile breaks for x
+  q <- quantile(x, probs = seq(0, 1, 0.25), na.rm = TRUE)
+  # If there aren't at least 2 unique breaks, all values are the same.
+  if(length(unique(q)) < 2) {
+    # Assign a single bin label to all observations
+    return(factor(rep("All", length(x))))
+  } else {
+    # Otherwise, use the unique quantile breaks to create bins
+    return(cut(x, breaks = unique(q), include.lowest = TRUE))
+  }
+}
+
+df <- df %>%
+  group_by(`ASSET CLASS`, `VINTAGE...INCEPTION.YEAR`) %>%
+  mutate(close_bin = create_close_bin(`FINAL CLOSE SIZE (USD MN)`)) %>%
+  ungroup()
+df$close_bin
+
+sum(is.na(df$`FUND MANAGER TOTAL AUM (USD MN)`))
+# Step 2: Group by FUND MANAGER, ASSET CLASS, VINTAGE / INCEPTION YEAR, and close_bin
+# Then impute missing FUND MANAGER TOTAL AUM using the median value from that group.
+df <- df %>%
+  group_by(`ASSET CLASS`, `VINTAGE...INCEPTION.YEAR`, close_bin) %>%
+  mutate(`FUND MANAGER TOTAL AUM (USD MN)` = ifelse(is.na(`FUND MANAGER TOTAL AUM (USD MN)`),
+                                                    median(`FUND MANAGER TOTAL AUM (USD MN)`, na.rm = TRUE),
+                                                    `FUND MANAGER TOTAL AUM (USD MN)`)) %>%
+  ungroup()
+
+gp_modeling <- df
+
+preqindata_new <- preqindata_new %>%
+  mutate(InvestorProfile = if_else(InvestorProfile == "et\nMemorial Sloan-Kettering Cancer Center",
+                                    "Memorial Sloan-Kettering Cancer Center",
+                                    InvestorProfile))
+
+
+lp_modeling <- preqindata_new %>%
+  select(
+    InvestorProfile,
+    LPType,
+    LP_Name,
+    AUM_line, 
+    TeamSize, 
+    PE_Snapshot_Current_MN, 
+    PE_Commitments_NumberOfFunds, 
+    ticket_size_millions,
+    consultant_cambridge_associates,
+    consultant_callan_associates,
+    consultant_aon_investments,
+    consultant_wilshire_associates,
+    consultant_nepc,
+    consultant_stepstone_group,
+    consultant_blackrock_investment_management,
+    consultant_aksia,
+    consultant_meketa_investment_group,
+    consultant_cliffwater,
+    in_house
+  )
+
+lp_changes <- read.csv("/Users/mross/Downloads/HistoricalActivity_AllLPs_Cleaned.csv")
+
+library(stringr)
+
+# Define a function to clean column names
+clean_column_names <- function(names_vector) {
+  # Convert to lowercase
+  names_vector <- tolower(names_vector)
+  
+  # Trim any leading/trailing white space
+  names_vector <- str_trim(names_vector)
+  
+  # Remove parentheses (but keep the text inside)
+  names_vector <- gsub("[()]", "", names_vector)
+  
+  # Remove unwanted symbols (keep letters, digits, space, and the % sign)
+  # This replaces any character that is NOT a letter, digit, space, or % with a space.
+  names_vector <- gsub("[^a-z0-9 %]+", " ", names_vector)
+  
+  # Replace multiple spaces with a single space
+  names_vector <- str_squish(names_vector)
+  
+  # Replace spaces with underscores
+  names_vector <- gsub(" ", "_", names_vector)
+  
+  return(names_vector)
+}
+
+# For example, if your dataframe is named 'df', clean its column names:
+names(gp_modeling) <- clean_column_names(names(gp_modeling))
+
+# To view the cleaned names:
+final_modeling <- gp_modeling %>%
+  left_join(lp_modeling, by = c("lp" = "LP_Name"))
+final_modeling <- final_modeling %>%
+  mutate(period = floor(vintage_inception_year /2 ) * 2)
+```
+
+
+```{r}
+colnames(final_modeling)
+fund_agg <- final_modeling %>%
+  group_by(lp, period) %>%
+  summarise(
+    total_ticket = sum(ticket_size_millions.x, na.rm = TRUE),
+    weighted_net_irr = weighted.mean(net_irr, ticket_size_millions.x, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+final_modeling <- final_modeling %>%
+  mutate(strategy = case_when(
+    strategy %in% c("Growth", "Expansion / Late Stage") ~ "Growth Equity",
+    strategy %in% c("Early Stage", "Early Stage: Start-up", "Early Stage: Seed") ~ "Early Stage Venture",
+    strategy == "Private Debt Fund of Funds" ~ "Fund of Funds",
+    strategy == "Co-Investment Multi-Manager" ~ "Co-Investment",
+    strategy %in% c("Special Situations", "Turnaround") ~ "Buyout",
+    strategy %in% c("Direct Secondaries") ~ "Secondaries",
+    strategy %in% c("Infrastructure Core", 
+                    "Infrastructure Core Plus", 
+                    "Infrastructure Opportunistic", 
+                    "Infrastructure Value Added", 
+                    "Natural Resources",
+                    "Distressed Debt", 
+                    "Direct Lending - Junior / Subordinated Debt", 
+                    "Direct Lending") ~ "Other",
+    TRUE ~ strategy
+  ))
+library(dplyr)
+
+final_modeling <- final_modeling %>%
+  mutate(geographic_focus = case_when(
+    geographic_focus %in% c("US", "North America", "Canada", "Midwest", "Northeast") ~ "North America",
+    geographic_focus %in% c("China", "Asia", "Japan", "South Korea", "India", "Thailand", "Malaysia", "Vietnam", "East and Southeast Asia", "Greater China", "Taiwan - China") ~ "Asia",
+    geographic_focus %in% c("Australasia", "Australia") ~ "Australasia",
+    geographic_focus %in% c("Europe", "UK", "Nordic", "West", "West Europe", "France", "Germany", "Central and East Europe", "Netherlands", "Ireland", "Spain") ~ "Europe",
+    geographic_focus %in% c("Brazil", "South America", "Americas", "Mexico", "British Virgin Islands") ~ "Americas",
+    geographic_focus %in% c("Middle East", "Israel", "Turkey") ~ "Middle East & Israel",
+    geographic_focus %in% c("Africa", "North Africa", "Sub-Saharan Africa", "South Africa", "Morocco") ~ "Africa",
+    TRUE ~ "Diversified Multi-Regional"
+  ))
+final_modeling
+```
+```{r}
+library(dplyr)
+library(tidyr)
+library(purrr)
+
+
+min_yr <- 2000
+max_yr <- 2019
+
+# Filter final_modeling for vintages between 2000 and 2019
+final_modeling_filtered <- final_modeling %>%
+  filter(!is.na(vintage_inception_year)) %>%
+  filter(vintage_inception_year >= min_yr, vintage_inception_year <= max_yr)
+
+# Define a function to expand each fund into a series of two-year periods.
+# Instead of using ticket size, each fund is counted once.
+expand_fund_periods_2yr <- function(lp, vintage, strat, min_yr, max_yr) {
+  # Force vintage to be at least min_yr
+  start_yr <- max(vintage, min_yr)
+  # Align the period: floor to the beginning of the 2-year bin
+  period_start <- 2 * floor((start_yr - min_yr) / 2) + min_yr
+  # Generate a sequence from the period start to max_yr in 2-year increments
+  yrs <- seq(period_start, max_yr, by = 2)
+  tibble(
+    lp = lp,
+    period_2yr = yrs,   # Two-year bin identifier
+    strategy = strat,
+    fund_count = 1      # Each row represents one fund (count=1)
+  )
+}
+
+# Apply rowwise expansion
+expanded <- final_modeling_filtered %>%
+  select(lp, vintage_inception_year, strategy) %>%
+  rowwise() %>%
+  do(
+    expand_fund_periods_2yr(
+      lp = .$lp,
+      vintage = .$vintage_inception_year,
+      strat = .$strategy,
+      min_yr = min_yr,
+      max_yr = max_yr
+    )
+  ) %>%
+  ungroup()
+
+# Aggregate funds by LP, period, and strategy (this is the non-cumulative count)
+lp_period_strategy <- expanded %>%
+  group_by(lp, period_2yr, strategy) %>%
+  summarize(num_funds = sum(fund_count, na.rm = TRUE), .groups = "drop")
+
+# Now, calculate cumulative counts over time for each LP and each strategy.
+# This means that for each LP and strategy, we sum funds from the earliest period up to the current period.
+lp_period_strategy_cum <- lp_period_strategy %>%
+  arrange(lp, period_2yr) %>%
+  group_by(lp, strategy) %>%
+  mutate(cum_strategy = cumsum(num_funds)) %>%
+  ungroup()
+
+# Next, compute cumulative total funds (across all strategies) for each LP by period.
+lp_period_totals <- lp_period_strategy %>%
+  group_by(lp, period_2yr) %>%
+  summarize(period_total = sum(num_funds, na.rm = TRUE), .groups = "drop") %>%
+  arrange(lp, period_2yr) %>%
+  group_by(lp) %>%
+  mutate(cum_total_funds = cumsum(period_total)) %>%
+  ungroup()
+
+# Now join the cumulative strategy counts with the cumulative totals and compute the strategy share.
+lp_period_shares_cum <- lp_period_strategy_cum %>%
+  left_join(lp_period_totals, by = c("lp", "period_2yr")) %>%
+  mutate(
+    strategy_share = if_else(cum_total_funds > 0, cum_strategy / cum_total_funds, 0)
+  )
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+
+# Set the analysis period from 2000 to 2022.
+min_yr <- 2000
+max_yr <- 2022
+
+# Instead of filtering for funds from 2000 onward, include all funds with vintage <= max_yr.
+final_modeling_filtered <- final_modeling %>%
+  filter(!is.na(vintage_inception_year),
+         vintage_inception_year <= max_yr)
+
+
+# Define a function to expand each fund into a series of two‐year periods.
+# Each fund is counted once.
+expand_fund_periods_2yr <- function(lp, vintage, strat, min_yr, max_yr) {
+  # Force vintage to be at least min_yr.
+  start_yr <- max(vintage, min_yr)
+  # Align the period: floor to the beginning of the 2‐year bin.
+  period_start <- 1 * floor((start_yr - min_yr) / 1) + min_yr
+  # Generate a sequence from period_start to max_yr in 2-year increments.
+  yrs <- seq(period_start, max_yr, by = 1)
+  tibble(
+    lp = lp,
+    period_2yr = yrs,   # Two-year bin identifier.
+    strategy = strat,
+    fund_count = 1      # Each row represents one fund.
+  )
+}
+
+# Apply rowwise expansion.
+expanded <- final_modeling_filtered %>%
+  select(lp, vintage_inception_year, strategy) %>%
+  rowwise() %>%
+  do(
+    expand_fund_periods_2yr(
+      lp = .$lp,
+      vintage = .$vintage_inception_year,
+      strat = .$strategy,
+      min_yr = min_yr,
+      max_yr = max_yr
+    )
+  ) %>%
+  ungroup()
+
+# Aggregate funds by LP, period, and strategy (non-cumulative count).
+lp_period_strategy <- expanded %>%
+  group_by(lp, period_2yr, strategy) %>%
+  summarize(num_funds = sum(fund_count, na.rm = TRUE), .groups = "drop")
+
+# Calculate cumulative counts over time for each LP and each strategy.
+lp_period_strategy_cum <- lp_period_strategy %>%
+  arrange(lp, period_2yr) %>%
+  group_by(lp, strategy) %>%
+  mutate(cum_strategy = num_funds) %>% # here, num funds is already equal to cum_strategy!
+  ungroup()
+
+# Compute cumulative total funds (across all strategies) for each LP by period.
+lp_period_totals <- lp_period_strategy %>%
+  group_by(lp, period_2yr) %>%
+  summarize(period_total = sum(num_funds, na.rm = TRUE), .groups = "drop") %>%
+  arrange(lp, period_2yr) %>%
+  group_by(lp) %>%
+  mutate(cum_total_funds = period_total) %>%
+  ungroup()
+
+
+lp_period_strategy %>%
+  group_by(lp, period_2yr) %>%
+  summarize(period_total = sum(num_funds, na.rm = TRUE), .groups = "drop") %>%
+  arrange(lp, period_2yr) %>%
+  group_by(lp)
+# Join the cumulative strategy counts with the cumulative totals and compute the strategy share.
+lp_period_shares_cum <- lp_period_strategy_cum %>%
+  left_join(lp_period_totals, by = c("lp", "period_2yr")) %>%
+  mutate(
+    strategy_share = if_else(num_funds > 0, cum_strategy / cum_total_funds, 0)
+  )
+
+# --- Divergence Measure: Proportions Divergence ---
+# Pivot the cumulative proportion data to wide format.
+lp_shares_prop <- lp_period_shares_cum %>%
+  select(lp, period_2yr, strategy, strategy_share, cum_total_funds) %>%
+  pivot_wider(names_from = strategy, values_from = strategy_share, values_fill = list(strategy_share = 0)) %>%
+  arrange(lp, period_2yr)
+
+# Join distinct cumulative total funds.
+lp_totals <- lp_period_shares_cum %>%
+  select(lp, period_2yr, cum_total_funds) %>%
+  distinct()
+lp_shares_prop <- lp_shares_prop %>%
+  left_join(lp_totals, by = c("lp", "period_2yr"))
+
+# Specify the strategy share columns.
+prop_strategy_cols <- c("Buyout", "Growth Equity", "Secondaries", "Fund of Funds",
+                        "Co-Investment", "Early Stage Venture", "Balanced", "Other", "Venture (General)")
+
+# For each LP, compute the positive change in cumulative proportions between consecutive periods.
+# (For each strategy, pmax(current - lag, 0)) and sum over strategies.
+lp_shares_prop <- lp_shares_prop %>%
+  arrange(period_2yr) %>%
+  arrange(lp) %>%
+  group_by(lp) %>%
+  mutate(
+    divergence_prop = rowSums(across(all_of(prop_strategy_cols), ~ pmax(. - lag(.), 0)), na.rm = TRUE),
+    normalized_div_prop = divergence_prop * sqrt(cum_total_funds.x)
+  ) %>%
+  ungroup()
+
+
+# --- Summarize Proportions Divergence by Period ---
+div_prop_summary <- lp_shares_prop %>%
+  filter(!is.na(normalized_div_prop)) %>%
+  group_by(period_2yr) %>%
+  summarize(
+    mean_norm_div_prop = mean(normalized_div_prop, na.rm = TRUE),
+    sd_norm_div_prop = sd(normalized_div_prop, na.rm = TRUE),
+    n = n(),
+    se_norm_div_prop = sd_norm_div_prop / sqrt(n),
+    lower_prop = mean_norm_div_prop - 1.96 * se_norm_div_prop,
+    upper_prop = mean_norm_div_prop + 1.96 * se_norm_div_prop,
+    .groups = "drop"
+  )
+
+# --- Plot the Proportions Divergence Measure ---
+ggplot(div_prop_summary, aes(x = period_2yr, y = mean_norm_div_prop)) +
+  geom_line(color = "darkgreen", size = 1) +
+  geom_ribbon(aes(ymin = lower_prop, ymax = upper_prop), fill = "darkgreen", alpha = 0.2) +
+  labs(
+    title = "Mean Normalized Proportions Divergence Over Two-Year Periods",
+    x = "Two-Year Period",
+    y = "Mean Normalized Proportions Divergence"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Assume lp_shares_prop is your wide-format dataframe with columns: 
+# lp, period_2yr, and strategy columns (as defined in prop_strategy_cols).
+# prop_strategy_cols should be defined as:
+prop_strategy_cols <- c( "Growth Equity", "Secondaries", "Fund of Funds",
+                        "Co-Investment", "Early Stage Venture", "Balanced", "Other", "Venture (General)")
+
+# Pivot the data to long format so that each row represents one LP, period, and strategy.
+lp_shares_long <- lp_shares_prop %>%
+  pivot_longer(
+    cols = all_of(prop_strategy_cols),
+    names_to = "strategy",
+    values_to = "strategy_share"
+  ) %>%
+  group_by(lp, strategy) %>%
+  arrange(period_2yr, .by_group = TRUE) %>%
+  # Compute divergence for each strategy as the positive change from the previous period.
+  mutate(
+    divergence_indiv = pmax(strategy_share - lag(strategy_share), 0)
+  ) %>%
+  ungroup()
+
+# Now summarize the divergence for each strategy at each period (e.g., using median or mean)
+div_strategy_summary <- lp_shares_long %>%
+  filter(!is.na(divergence_indiv)) %>%  # drop the first period per LP-strategy (NA from lag)
+  group_by(period_2yr, strategy) %>%
+  summarize(
+    mean_div = mean(divergence_indiv, na.rm = TRUE),
+    sd_div = sd(divergence_indiv, na.rm = TRUE),
+    n = n(),
+    se_div = sd_div / sqrt(n),
+    lower = mean_div - 1.96 * se_div,
+    upper = mean_div + 1.96 * se_div,
+    .groups = "drop"
+  )
+
+# Finally, plot the divergence over time with each line representing a strategy.
+ggplot(div_strategy_summary, aes(x = period_2yr, y = mean_div, color = strategy)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = strategy), alpha = 0.2, color = NA) +
+  labs(
+    title = "Mean Divergence by Strategy Over Two-Year Periods",
+    x = "Two-Year Period",
+    y = "Mean Divergence (Positive Change in Proportion)"
+  ) +
+  theme_minimal()
+```
+```{r}
+fed <- read.csv("/Users/mross/Desktop/fed_cleaned.csv")
+spreads <- read.csv("/Users/mross/Desktop/Corporate Spreads.csv")
+if (!require("quantmod")) {
+  install.packages("quantmod")
+  library(quantmod)
+}
+sp500_data <- getSymbols("^GSPC", src = "yahoo", from = "1990-01-01", auto.assign = FALSE)
+sp500_returns <- dailyReturn(Cl(sp500_data))
+pe_inflow <- read_xlsx("/Users/mross/Desktop/preqin_export_historicalFundraisingChart_2025_3_20.xlsx")
+
+
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+
+# ---------- 1. Aggregate Fed Rates to Yearly Mean (2000-2022) ----------
+fed_yearly <- fed %>%
+  mutate(Date = as.Date(Date)) %>%
+  filter(year(Date) >= 2000, year(Date) <= 2022) %>%
+  mutate(Year = year(Date)) %>%
+  group_by(Year) %>%
+  summarize(mean_fed_rate = mean(Rate, na.rm = TRUE)) %>%
+  ungroup()
+
+# ---------- 2. Aggregate Spreads to Yearly Mean (2000-2022) ----------
+# (Assuming the second column is named "BAMLC0A0CM")
+spreads_yearly <- spreads %>%
+  mutate(observation_date = as.Date(observation_date)) %>%
+  filter(year(observation_date) >= 2000, year(observation_date) <= 2022) %>%
+  mutate(Year = year(observation_date)) %>%
+  group_by(Year) %>%
+  summarize(mean_spread = mean(`BAMLC0A0CM`, na.rm = TRUE)) %>%
+  ungroup()
+
+# ---------- 3. Compute Trailing S&P 500 Returns ----------
+# Assume sp500_returns is a dataframe with a column "daily.returns" and rownames as dates.
+# If the dates are stored as rownames, we can create a date column:
+sp500_returns <- sp500_returns %>%
+  mutate(date = as.Date(rownames(sp500_returns))) %>%
+  mutate(Year = year(date))
+
+# Helper function: calculate cumulative return from start_date to end_date
+calc_trailing_return <- function(df, start_date, end_date) {
+  period_df <- df %>% filter(date >= start_date, date <= end_date)
+  if(nrow(period_df) == 0) return(NA_real_)
+  prod(1 + period_df$daily.returns, na.rm = TRUE) - 1
+}
+
+# Create a table of year-end dates (assuming December 31 for each year)
+year_ends <- tibble(Year = 2000:2022, 
+                    year_end = as.Date(paste0(2000:2022, "-12-31")))
+
+# For each year, calculate the trailing returns over 1, 3, and 5 years.
+sp500_yearly <- year_ends %>%
+  rowwise() %>%
+  mutate(
+    trailing_1yr = calc_trailing_return(sp500_returns, 
+                                        as.Date(paste0(Year - 1, "-01-01")), 
+                                        year_end),
+    trailing_3yr = calc_trailing_return(sp500_returns, 
+                                        as.Date(paste0(Year - 3, "-01-01")), 
+                                        year_end),
+    trailing_5yr = calc_trailing_return(sp500_returns, 
+                                        as.Date(paste0(Year - 5, "-01-01")), 
+                                        year_end)
+  ) %>%
+  ungroup() %>%
+  select(Year, trailing_1yr, trailing_3yr, trailing_5yr)
+
+# ---------- 4. Process PE Inflow Data ----------
+# Assuming pe_inflow has columns: "YEAR", "NO. OF FUNDS", "AGGREGATE CAPITAL RAISED (USD BN)",
+# and "AVERAGE SIZE (USD MN)"
+pe_inflow_processed <- pe_inflow %>%
+  mutate(Year = as.numeric(YEAR)) %>%
+  filter(Year >= 2000, Year <= 2022) %>%
+  rename(
+    pe_no_funds = `NO. OF FUNDS`,
+    pe_capital = `AGGREGATE CAPITAL RAISED (USD BN)`,
+    pe_avg_size = `AVERAGE SIZE (USD MN)`
+  )
+
+# ---------- 5. Merge All Exogenous Variables by Year ----------
+exog_data <- fed_yearly %>%
+  full_join(spreads_yearly, by = "Year") %>%
+  full_join(sp500_yearly, by = "Year") %>%
+  full_join(pe_inflow_processed, by = "Year")
+
+# View the merged exogenous dataset
+print(exog_data)
+
+```
+
