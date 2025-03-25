@@ -7,13 +7,24 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+library(tidytext)
+library(dplyr)
+library(wordcloud)
+library(stringr)
+library(purrr)
+library(igraph)
+library(tidyr)
+library(ggplot2)
+library(lubridate)
+library(xts)
+library(PerformanceAnalytics)
 ```
 
 
 ```{r}
-library(dplyr)
-library(tidyverse)
-library(readxl)
+
 
 # Read in your data files
 lpdata <- read.csv("/Users/mross/Downloads/master.csv")
@@ -1113,8 +1124,7 @@ print(p_asset_line)
 
 
 ```{r}
-library(dplyr)
-library(ggplot2)
+
 table(df$PE..PRIMARY.STRATEGY)
 # Identify the top 3 primary strategies by count
 
@@ -1147,10 +1157,7 @@ print(p_strategy)
 
 ```
 ```{r}
-library(tidytext)
-library(dplyr)
-library(wordcloud)
-library(stringr)
+
 
 # Define a vector of strategy-related keywords (all in lower-case) 
 # (now including "cambridge_associates" instead of "cambridge")
@@ -1209,9 +1216,7 @@ wordcloud(
 ```
 
 ```{r}
-library(dplyr)
-library(purrr)
-library(igraph)
+
 
 # --- Step 0: Define the LP subset ---
 
@@ -1320,8 +1325,7 @@ dev.off()
 
 ```{r}
 # Load required libraries
-library(dplyr)
-library(stringr)
+
 
 # Define a vector of consultant names (all in lowercase for matching)
 consultants <- c("cambridge_associates", 
@@ -1497,88 +1501,9 @@ final_modeling <- final_modeling %>%
   ))
 final_modeling
 ```
-```{r}
-library(dplyr)
-library(tidyr)
-library(purrr)
-
-
-min_yr <- 2000
-max_yr <- 2019
-
-# Filter final_modeling for vintages between 2000 and 2019
-final_modeling_filtered <- final_modeling %>%
-  filter(!is.na(vintage_inception_year)) %>%
-  filter(vintage_inception_year >= min_yr, vintage_inception_year <= max_yr)
-
-# Define a function to expand each fund into a series of two-year periods.
-# Instead of using ticket size, each fund is counted once.
-expand_fund_periods_2yr <- function(lp, vintage, strat, min_yr, max_yr) {
-  # Force vintage to be at least min_yr
-  start_yr <- max(vintage, min_yr)
-  # Align the period: floor to the beginning of the 2-year bin
-  period_start <- 2 * floor((start_yr - min_yr) / 2) + min_yr
-  # Generate a sequence from the period start to max_yr in 2-year increments
-  yrs <- seq(period_start, max_yr, by = 2)
-  tibble(
-    lp = lp,
-    period_2yr = yrs,   # Two-year bin identifier
-    strategy = strat,
-    fund_count = 1      # Each row represents one fund (count=1)
-  )
-}
-
-# Apply rowwise expansion
-expanded <- final_modeling_filtered %>%
-  select(lp, vintage_inception_year, strategy) %>%
-  rowwise() %>%
-  do(
-    expand_fund_periods_2yr(
-      lp = .$lp,
-      vintage = .$vintage_inception_year,
-      strat = .$strategy,
-      min_yr = min_yr,
-      max_yr = max_yr
-    )
-  ) %>%
-  ungroup()
-
-# Aggregate funds by LP, period, and strategy (this is the non-cumulative count)
-lp_period_strategy <- expanded %>%
-  group_by(lp, period_2yr, strategy) %>%
-  summarize(num_funds = sum(fund_count, na.rm = TRUE), .groups = "drop")
-
-# Now, calculate cumulative counts over time for each LP and each strategy.
-# This means that for each LP and strategy, we sum funds from the earliest period up to the current period.
-lp_period_strategy_cum <- lp_period_strategy %>%
-  arrange(lp, period_2yr) %>%
-  group_by(lp, strategy) %>%
-  mutate(cum_strategy = cumsum(num_funds)) %>%
-  ungroup()
-
-# Next, compute cumulative total funds (across all strategies) for each LP by period.
-lp_period_totals <- lp_period_strategy %>%
-  group_by(lp, period_2yr) %>%
-  summarize(period_total = sum(num_funds, na.rm = TRUE), .groups = "drop") %>%
-  arrange(lp, period_2yr) %>%
-  group_by(lp) %>%
-  mutate(cum_total_funds = cumsum(period_total)) %>%
-  ungroup()
-
-# Now join the cumulative strategy counts with the cumulative totals and compute the strategy share.
-lp_period_shares_cum <- lp_period_strategy_cum %>%
-  left_join(lp_period_totals, by = c("lp", "period_2yr")) %>%
-  mutate(
-    strategy_share = if_else(cum_total_funds > 0, cum_strategy / cum_total_funds, 0)
-  )
-```
+creating divergence metric
 
 ```{r}
-library(dplyr)
-library(tidyr)
-library(purrr)
-library(ggplot2)
-
 # Set the analysis period from 2000 to 2022.
 min_yr <- 2000
 max_yr <- 2022
@@ -1711,11 +1636,9 @@ ggplot(div_prop_summary, aes(x = period_2yr, y = mean_norm_div_prop)) +
   ) +
   theme_minimal()
 ```
-
+visualizing strategie divergence over time
 ```{r}
-library(dplyr)
-library(tidyr)
-library(ggplot2)
+
 
 # Assume lp_shares_prop is your wide-format dataframe with columns: 
 # lp, period_2yr, and strategy columns (as defined in prop_strategy_cols).
@@ -1763,6 +1686,8 @@ ggplot(div_strategy_summary, aes(x = period_2yr, y = mean_div, color = strategy)
   ) +
   theme_minimal()
 ```
+exogneous variables and such
+
 ```{r}
 fed <- read.csv("/Users/mross/Desktop/fed_cleaned.csv")
 spreads <- read.csv("/Users/mross/Desktop/Corporate Spreads.csv")
@@ -1774,85 +1699,203 @@ sp500_data <- getSymbols("^GSPC", src = "yahoo", from = "1990-01-01", auto.assig
 sp500_returns <- dailyReturn(Cl(sp500_data))
 pe_inflow <- read_xlsx("/Users/mross/Desktop/preqin_export_historicalFundraisingChart_2025_3_20.xlsx")
 
-
-library(dplyr)
-library(lubridate)
-library(ggplot2)
-
-# ---------- 1. Aggregate Fed Rates to Yearly Mean (2000-2022) ----------
+#### 1. Process Fed Rates Data ####
+# Assume fed is a data frame with columns: Date (chr) and Rate (dbl)
 fed_yearly <- fed %>%
-  mutate(Date = as.Date(Date)) %>%
-  filter(year(Date) >= 2000, year(Date) <= 2022) %>%
-  mutate(Year = year(Date)) %>%
-  group_by(Year) %>%
-  summarize(mean_fed_rate = mean(Rate, na.rm = TRUE)) %>%
-  ungroup()
+  mutate(Date = as.Date(Date),
+         year = year(Date)) %>%
+  filter(year >= 2000, year <= 2022) %>%
+  group_by(year) %>%
+  summarize(fed_rate = mean(Rate, na.rm = TRUE), .groups = "drop")
 
-# ---------- 2. Aggregate Spreads to Yearly Mean (2000-2022) ----------
-# (Assuming the second column is named "BAMLC0A0CM")
-spreads_yearly <- spreads %>%
-  mutate(observation_date = as.Date(observation_date)) %>%
-  filter(year(observation_date) >= 2000, year(observation_date) <= 2022) %>%
-  mutate(Year = year(observation_date)) %>%
-  group_by(Year) %>%
-  summarize(mean_spread = mean(`BAMLC0A0CM`, na.rm = TRUE)) %>%
-  ungroup()
+#### 2. Process S&P 500 Returns Data ####
+# Here we assume sp500_returns is an xts object that, when converted to a data frame,
+# has a single column 'daily.returns' where each row is a string like "1990-01-02 0.0000000000".
+# (If your data are already a data frame with one column, adjust accordingly.)
+# First, convert the xts object to a data frame:
+sp500_df <- data.frame(date = index(sp500_returns),
+                       daily.returns = as.character(coredata(sp500_returns)[, 1]),
+                       stringsAsFactors = FALSE)
 
-# ---------- 3. Compute Trailing S&P 500 Returns ----------
-# Assume sp500_returns is a dataframe with a column "daily.returns" and rownames as dates.
-# If the dates are stored as rownames, we can create a date column:
-sp500_returns <- sp500_returns %>%
-  mutate(date = as.Date(rownames(sp500_returns))) %>%
-  mutate(Year = year(date))
+# If the daily.returns column still contains both the date and the return (separated by space),
+# separate them into two columns.
+sp500_df <- sp500_df %>%
+  mutate(year = as.numeric(year(date)), 
+         daily.returns = as.numeric(daily.returns))
 
-# Helper function: calculate cumulative return from start_date to end_date
-calc_trailing_return <- function(df, start_date, end_date) {
-  period_df <- df %>% filter(date >= start_date, date <= end_date)
-  if(nrow(period_df) == 0) return(NA_real_)
-  prod(1 + period_df$daily.returns, na.rm = TRUE) - 1
+# Filter to the analysis period
+sp500_df <- sp500_df %>% filter(year >= 1995, year <= 2022)
+
+# Now, aggregate daily returns to annual (calendar-year) returns.
+# For each year, we compound daily returns.
+sp500_yearly <- sp500_df %>%
+  group_by(year) %>%
+  summarize(annual_return = prod(1 + daily.returns, na.rm = TRUE) - 1, .groups = "drop")
+
+# Next, compute trailing returns. We define functions for 1-, 3-, and 5-year trailing returns.
+# Here we use the annual returns. (You may choose to use actual trading-day returns instead.)
+get_trailing_return <- function(year, annual_returns, window) {
+  # get the subset of years: from (year - window + 1) to year
+  yrs <- seq(year - window + 1, year)
+  ret <- annual_returns %>% filter(year %in% yrs) %>% pull(annual_return)
+  if(length(ret) < window) return(NA_real_)
+  return(prod(1 + ret, na.rm = TRUE) - 1)
 }
 
-# Create a table of year-end dates (assuming December 31 for each year)
-year_ends <- tibble(Year = 2000:2022, 
-                    year_end = as.Date(paste0(2000:2022, "-12-31")))
-
-# For each year, calculate the trailing returns over 1, 3, and 5 years.
-sp500_yearly <- year_ends %>%
-  rowwise() %>%
-  mutate(
-    trailing_1yr = calc_trailing_return(sp500_returns, 
-                                        as.Date(paste0(Year - 1, "-01-01")), 
-                                        year_end),
-    trailing_3yr = calc_trailing_return(sp500_returns, 
-                                        as.Date(paste0(Year - 3, "-01-01")), 
-                                        year_end),
-    trailing_5yr = calc_trailing_return(sp500_returns, 
-                                        as.Date(paste0(Year - 5, "-01-01")), 
-                                        year_end)
-  ) %>%
-  ungroup() %>%
-  select(Year, trailing_1yr, trailing_3yr, trailing_5yr)
-
-# ---------- 4. Process PE Inflow Data ----------
-# Assuming pe_inflow has columns: "YEAR", "NO. OF FUNDS", "AGGREGATE CAPITAL RAISED (USD BN)",
-# and "AVERAGE SIZE (USD MN)"
-pe_inflow_processed <- pe_inflow %>%
-  mutate(Year = as.numeric(YEAR)) %>%
-  filter(Year >= 2000, Year <= 2022) %>%
-  rename(
-    pe_no_funds = `NO. OF FUNDS`,
-    pe_capital = `AGGREGATE CAPITAL RAISED (USD BN)`,
-    pe_avg_size = `AVERAGE SIZE (USD MN)`
+# Create trailing return columns (for each year end, trailing 1, 3, and 5 years)
+sp500_yearly <- sp500_yearly %>%
+  arrange(year) %>%
+  mutate(trail_1yr = annual_return,
+         trail_3yr = purrr::map_dbl(year, ~ get_trailing_return(.x, sp500_yearly, 3)),
+         trail_5yr = purrr::map_dbl(year, ~ get_trailing_return(.x, sp500_yearly, 5))
   )
 
-# ---------- 5. Merge All Exogenous Variables by Year ----------
-exog_data <- fed_yearly %>%
-  full_join(spreads_yearly, by = "Year") %>%
-  full_join(sp500_yearly, by = "Year") %>%
-  full_join(pe_inflow_processed, by = "Year")
+#### 3. Process PE Inflow Data ####
+# Assume pe_inflow is already a data frame with columns: YEAR, NO. OF FUNDS, AGGREGATE CAPITAL RAISED (USD BN),
+# AVERAGE SIZE (USD MN). We first ensure that the year column is numeric.
+pe_inflow <- pe_inflow %>%
+  rename(year = YEAR,
+         num_funds = `NO. OF FUNDS`,
+         capital_raised = `AGGREGATE CAPITAL RAISED (USD BN)`,
+         avg_size = `AVERAGE SIZE (USD MN)`) %>%
+  mutate(year = as.numeric(year)) %>%
+  filter(year >= 2000, year <= 2022)
 
-# View the merged exogenous dataset
-print(exog_data)
+
+spreads_yearly <- spreads %>%
+  mutate(observation_date = as.Date(observation_date),
+         year = year(observation_date)) %>%
+  filter(year >= 2000, year <= 2022) %>%
+  group_by(year) %>%
+  summarize(avg_spread = mean(BAMLC0A0CM, na.rm = TRUE), .groups = "drop")
+
+
+#### 4. Combine All Exogenous Variables ####
+# Now merge fed_yearly, sp500_yearly, and pe_inflow by year.
+exogenous <- fed_yearly %>%
+  full_join(sp500_yearly, by = "year") %>%
+  full_join(pe_inflow, by = "year") %>% 
+  full_join(spreads_yearly, by = "year") %>%
+  arrange(year) %>% filter(year >= 2000)
+
+# Print the exogenous dataset
+print(exogenous)
+
+#### (Optional) Plot the S&P 500 trailing returns over time ####
+exogenous_long <- exogenous %>%
+  select(year, trail_1yr, trail_3yr, trail_5yr) %>%
+  pivot_longer(cols = starts_with("trail"), names_to = "trailing", values_to = "return")
+
+ggplot(exogenous_long, aes(x = year, y = return, color = trailing)) +
+  geom_line(size = 1) +
+  labs(title = "S&P 500 Trailing Returns", x = "Year", y = "Trailing Return") +
+  theme_minimal()
+
+colnames(final_modeling)
+```
+
+```{r}
+div_panel_model <- lp_shares_prop %>% select(lp, period_2yr, divergence_prop, normalized_div_prop)
+div_panel_model <- left_join(div_panel_model, exogenous, by = c("period_2yr" = "year"))
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+
+#────────────────────────────────────────────
+# STEP 1: Create a fund-level performance dataset.
+# (Assuming final_modeling_filtered has the relevant columns)
+fund_perf <- final_modeling_filtered %>%
+  select(lp, vintage_inception_year, net_irr)  # you can add dpi, rvpi as needed
+
+#────────────────────────────────────────────
+# STEP 2: Create a function to compute lagged performance.
+# For a given LP and current period (year), and given a trailing gap and (optionally) a window,
+# return a named vector with median and mean net_irr.
+compute_lagged_perf <- function(current_year, lp_id, gap, window_length = NA) {
+  # For "windowed" version, if window_length is provided (e.g. 10), then use funds with vintage in:
+  # [current_year - window_length, current_year - gap]
+  # For "no window" version, use all funds with vintage <= current_year - gap.
+  if (!is.na(window_length)) {
+    lower_bound <- current_year - window_length
+  } else {
+    lower_bound <- -Inf  # take all available
+  }
+  upper_bound <- current_year - gap
+  
+  # Filter funds for this LP with vintage in the appropriate interval.
+  vals <- fund_perf %>%
+    filter(lp == lp_id,
+           vintage_inception_year >= lower_bound,
+           vintage_inception_year <= upper_bound) %>%
+    pull(net_irr)
+  
+  if(length(vals) == 0) {
+    return(c(median = NA_real_, mean = NA_real_))
+  } else {
+    return(c(median = median(vals, na.rm = TRUE),
+             mean = mean(vals, na.rm = TRUE)))
+  }
+}
+
+#────────────────────────────────────────────
+# STEP 3: Integrate lagged performance into the panel data.
+# We want to compute lagged performance for various trailing gaps (2,3,4 years) 
+# and with/without a 10-year window.
+# We'll do this rowwise in the panel dataset.
+
+# Assume div_panel_model has columns: lp, period_2yr, divergence_prop, normalized_div_prop, fed_rate, annual_return, etc.
+div_panel_model <- div_panel_model %>%
+  rowwise() %>%
+  mutate(
+    # For a 2-year gap with a 10-year window:
+    lag2_win = list(compute_lagged_perf(period_2yr, lp, gap = 2, window_length = 10)),
+    # For a 2-year gap, no window (i.e. all funds before period-2):
+    lag2_nowin = list(compute_lagged_perf(period_2yr, lp, gap = 2, window_length = NA)),
+    # For a 3-year gap with a 10-year window:
+    lag3_win = list(compute_lagged_perf(period_2yr, lp, gap = 3, window_length = 10)),
+    # For a 3-year gap, no window:
+    lag3_nowin = list(compute_lagged_perf(period_2yr, lp, gap = 3, window_length = NA)),
+    # For a 4-year gap with a 10-year window:
+    lag4_win = list(compute_lagged_perf(period_2yr, lp, gap = 4, window_length = 10)),
+    # For a 4-year gap, no window:
+    lag4_nowin = list(compute_lagged_perf(period_2yr, lp, gap = 4, window_length = NA))
+  ) %>%
+  # Now extract the median and mean components into separate columns.
+  mutate(
+    lag2_win_med = lag2_win[[1]]["median"],
+    lag2_win_mean = lag2_win[[1]]["mean"],
+    lag2_nowin_med = lag2_nowin[[1]]["median"],
+    lag2_nowin_mean = lag2_nowin[[1]]["mean"],
+    lag3_win_med = lag3_win[[1]]["median"],
+    lag3_win_mean = lag3_win[[1]]["mean"],
+    lag3_nowin_med = lag3_nowin[[1]]["median"],
+    lag3_nowin_mean = lag3_nowin[[1]]["mean"],
+    lag4_win_med = lag4_win[[1]]["median"],
+    lag4_win_mean = lag4_win[[1]]["mean"],
+    lag4_nowin_med = lag4_nowin[[1]]["median"],
+    lag4_nowin_mean = lag4_nowin[[1]]["mean"]
+  ) %>%
+  ungroup()
+
+#────────────────────────────────────────────
+# At this point, div_panel_model has additional columns (e.g., lag2_win_med, lag2_nowin_mean, etc.)
+# that you can now use as predictors in your panel regression.
+#
+# For example, using the plm package (for a fixed effects model):
+library(plm)
+panel_model <- plm(annual_return ~ lag2_win_med + lag2_win_mean +
+                     lag2_nowin_med + lag2_nowin_mean +
+                     lag3_win_med + lag3_win_mean +
+                     lag3_nowin_med + lag3_nowin_mean +
+                     lag4_win_med + lag4_win_mean +
+                     lag4_nowin_med + lag4_nowin_mean +
+                     fed_rate,  # and other variables as needed
+                   data = div_panel_model,
+                   index = c("lp", "period_2yr"),
+                   model = "within")
+summary(panel_model)
 
 ```
 
