@@ -1803,35 +1803,21 @@ library(tidyr)
 library(purrr)
 library(ggplot2)
 
-#────────────────────────────────────────────
-# STEP 1: Create a fund-level performance dataset.
-# (Assuming final_modeling_filtered has the relevant columns)
-fund_perf <- final_modeling_filtered %>%
-  select(lp, vintage_inception_year, net_irr)  # you can add dpi, rvpi as needed
+final_modeling_filtered %>% filter(lp == "AIG") %>% arrange(vintage_inception_year)
 
-#────────────────────────────────────────────
-# STEP 2: Create a function to compute lagged performance.
-# For a given LP and current period (year), and given a trailing gap and (optionally) a window,
-# return a named vector with median and mean net_irr.
+fund_perf <- final_modeling_filtered %>%
+  select(lp, vintage_inception_year, net_irr)
+
+# Function to compute lagged performance.
 compute_lagged_perf <- function(current_year, lp_id, gap, window_length = NA) {
-  # For "windowed" version, if window_length is provided (e.g. 10), then use funds with vintage in:
-  # [current_year - window_length, current_year - gap]
-  # For "no window" version, use all funds with vintage <= current_year - gap.
-  if (!is.na(window_length)) {
-    lower_bound <- current_year - window_length
-  } else {
-    lower_bound <- -Inf  # take all available
-  }
+  lower_bound <- if (!is.na(window_length)) current_year - window_length else -Inf
   upper_bound <- current_year - gap
-  
-  # Filter funds for this LP with vintage in the appropriate interval.
   vals <- fund_perf %>%
     filter(lp == lp_id,
            vintage_inception_year >= lower_bound,
            vintage_inception_year <= upper_bound) %>%
     pull(net_irr)
-  
-  if(length(vals) == 0) {
+  if (length(vals) == 0) {
     return(c(median = NA_real_, mean = NA_real_))
   } else {
     return(c(median = median(vals, na.rm = TRUE),
@@ -1839,63 +1825,194 @@ compute_lagged_perf <- function(current_year, lp_id, gap, window_length = NA) {
   }
 }
 
-#────────────────────────────────────────────
-# STEP 3: Integrate lagged performance into the panel data.
-# We want to compute lagged performance for various trailing gaps (2,3,4 years) 
-# and with/without a 10-year window.
-# We'll do this rowwise in the panel dataset.
+# Function for benchmark performance (across all LPs).
+compute_benchmark_perf <- function(current_year, gap, window_length = NA) {
+  lower_bound <- if (!is.na(window_length)) current_year - window_length else -Inf
+  upper_bound <- current_year - gap
+  vals <- fund_perf %>%
+    filter(vintage_inception_year >= lower_bound,
+           vintage_inception_year <= upper_bound) %>%
+    pull(net_irr)
+  if (length(vals) == 0) {
+    return(c(median = NA_real_, mean = NA_real_))
+  } else {
+    return(c(median = median(vals, na.rm = TRUE),
+             mean = mean(vals, na.rm = TRUE)))
+  }
+}
 
-# Assume div_panel_model has columns: lp, period_2yr, divergence_prop, normalized_div_prop, fed_rate, annual_return, etc.
+# Calculate lagged performance columns directly (without nesting) by calling the function and extracting the value.
 div_panel_model <- div_panel_model %>%
   rowwise() %>%
   mutate(
-    # For a 2-year gap with a 10-year window:
-    lag2_win = list(compute_lagged_perf(period_2yr, lp, gap = 2, window_length = 10)),
-    # For a 2-year gap, no window (i.e. all funds before period-2):
-    lag2_nowin = list(compute_lagged_perf(period_2yr, lp, gap = 2, window_length = NA)),
-    # For a 3-year gap with a 10-year window:
-    lag3_win = list(compute_lagged_perf(period_2yr, lp, gap = 3, window_length = 10)),
-    # For a 3-year gap, no window:
-    lag3_nowin = list(compute_lagged_perf(period_2yr, lp, gap = 3, window_length = NA)),
-    # For a 4-year gap with a 10-year window:
-    lag4_win = list(compute_lagged_perf(period_2yr, lp, gap = 4, window_length = 10)),
-    # For a 4-year gap, no window:
-    lag4_nowin = list(compute_lagged_perf(period_2yr, lp, gap = 4, window_length = NA))
-  ) %>%
-  # Now extract the median and mean components into separate columns.
-  mutate(
-    lag2_win_med = lag2_win[[1]]["median"],
-    lag2_win_mean = lag2_win[[1]]["mean"],
-    lag2_nowin_med = lag2_nowin[[1]]["median"],
-    lag2_nowin_mean = lag2_nowin[[1]]["mean"],
-    lag3_win_med = lag3_win[[1]]["median"],
-    lag3_win_mean = lag3_win[[1]]["mean"],
-    lag3_nowin_med = lag3_nowin[[1]]["median"],
-    lag3_nowin_mean = lag3_nowin[[1]]["mean"],
-    lag4_win_med = lag4_win[[1]]["median"],
-    lag4_win_mean = lag4_win[[1]]["mean"],
-    lag4_nowin_med = lag4_nowin[[1]]["median"],
-    lag4_nowin_mean = lag4_nowin[[1]]["mean"]
+    lag2_win_med   = compute_lagged_perf(period_2yr, lp, gap = 2, window_length = 10)[["median"]],
+    lag2_win_mean  = compute_lagged_perf(period_2yr, lp, gap = 2, window_length = 10)[["mean"]],
+    lag2_nowin_med = compute_lagged_perf(period_2yr, lp, gap = 2, window_length = NA)[["median"]],
+    lag2_nowin_mean= compute_lagged_perf(period_2yr, lp, gap = 2, window_length = NA)[["mean"]],
+    lag3_win_med   = compute_lagged_perf(period_2yr, lp, gap = 3, window_length = 10)[["median"]],
+    lag3_win_mean  = compute_lagged_perf(period_2yr, lp, gap = 3, window_length = 10)[["mean"]],
+    lag3_nowin_med = compute_lagged_perf(period_2yr, lp, gap = 3, window_length = NA)[["median"]],
+    lag3_nowin_mean= compute_lagged_perf(period_2yr, lp, gap = 3, window_length = NA)[["mean"]],
+    lag4_win_med   = compute_lagged_perf(period_2yr, lp, gap = 4, window_length = 10)[["median"]],
+    lag4_win_mean  = compute_lagged_perf(period_2yr, lp, gap = 4, window_length = 10)[["mean"]],
+    lag4_nowin_med = compute_lagged_perf(period_2yr, lp, gap = 4, window_length = NA)[["median"]],
+    lag4_nowin_mean= compute_lagged_perf(period_2yr, lp, gap = 4, window_length = NA)[["mean"]]
   ) %>%
   ungroup()
 
-#────────────────────────────────────────────
-# At this point, div_panel_model has additional columns (e.g., lag2_win_med, lag2_nowin_mean, etc.)
-# that you can now use as predictors in your panel regression.
-#
-# For example, using the plm package (for a fixed effects model):
+# Calculate benchmark performance for each period (across all LPs).
+div_panel_model <- div_panel_model %>%
+  rowwise() %>%
+  mutate(
+    bench2_win_med   = compute_benchmark_perf(period_2yr, gap = 2, window_length = 10)[["median"]],
+    bench2_win_mean  = compute_benchmark_perf(period_2yr, gap = 2, window_length = 10)[["mean"]],
+    bench2_nowin_med = compute_benchmark_perf(period_2yr, gap = 2, window_length = NA)[["median"]],
+    bench2_nowin_mean= compute_benchmark_perf(period_2yr, gap = 2, window_length = NA)[["mean"]],
+    bench3_win_med   = compute_benchmark_perf(period_2yr, gap = 3, window_length = 10)[["median"]],
+    bench3_win_mean  = compute_benchmark_perf(period_2yr, gap = 3, window_length = 10)[["mean"]],
+    bench3_nowin_med = compute_benchmark_perf(period_2yr, gap = 3, window_length = NA)[["median"]],
+    bench3_nowin_mean= compute_benchmark_perf(period_2yr, gap = 3, window_length = NA)[["mean"]],
+    bench4_win_med   = compute_benchmark_perf(period_2yr, gap = 4, window_length = 10)[["median"]],
+    bench4_win_mean  = compute_benchmark_perf(period_2yr, gap = 4, window_length = 10)[["mean"]],
+    bench4_nowin_med = compute_benchmark_perf(period_2yr, gap = 4, window_length = NA)[["median"]],
+    bench4_nowin_mean= compute_benchmark_perf(period_2yr, gap = 4, window_length = NA)[["mean"]]
+  ) %>%
+  ungroup()
+
+# Calculate excess performance as LP lagged performance minus benchmark performance.
+div_panel_model <- div_panel_model %>%
+  mutate(
+    lag2_win_excess_med   = lag2_win_med   - bench2_win_med,
+    lag2_win_excess_mean  = lag2_win_mean  - bench2_win_mean,
+    lag2_nowin_excess_med = lag2_nowin_med - bench2_nowin_med,
+    lag2_nowin_excess_mean= lag2_nowin_mean- bench2_nowin_mean,
+    lag3_win_excess_med   = lag3_win_med   - bench3_win_med,
+    lag3_win_excess_mean  = lag3_win_mean  - bench3_win_mean,
+    lag3_nowin_excess_med = lag3_nowin_med - bench3_nowin_med,
+    lag3_nowin_excess_mean= lag3_nowin_mean- bench3_nowin_mean,
+    lag4_win_excess_med   = lag4_win_med   - bench4_win_med,
+    lag4_win_excess_mean  = lag4_win_mean  - bench4_win_mean,
+    lag4_nowin_excess_med = lag4_nowin_med - bench4_nowin_med,
+    lag4_nowin_excess_mean= lag4_nowin_mean- bench4_nowin_mean
+  )
+
+### 3. Incorporate LP Characteristics and Preqin Ranking
+
+# Get LP-level characteristics.
+lp_info <- final_modeling_filtered %>%
+  select(lp, AUM_line, LPType) %>%
+  distinct()
+div_panel_model <- div_panel_model %>%
+  left_join(lp_info, by = "lp")
+
+# Calculate the average preqin_quartile_rank for each period.
+preqin_rank_by_period <- final_modeling_filtered %>%
+  mutate(period = 1 * floor((vintage_inception_year - min_yr) / 1) + min_yr) %>%
+  group_by(period) %>%
+  summarize(avg_preqin_quartile_rank = mean(preqin_quartile_rank, na.rm = TRUE), .groups = "drop")
+div_panel_model <- div_panel_model %>%
+  left_join(preqin_rank_by_period, by = c("period_2yr" = "period"))
+
+
+colnames(div_panel_model)
+```
+```{r}
+# Load required libraries
+library(dplyr)
 library(plm)
-panel_model <- plm(annual_return ~ lag2_win_med + lag2_win_mean +
-                     lag2_nowin_med + lag2_nowin_mean +
-                     lag3_win_med + lag3_win_mean +
-                     lag3_nowin_med + lag3_nowin_mean +
-                     lag4_win_med + lag4_win_mean +
-                     lag4_nowin_med + lag4_nowin_mean +
-                     fed_rate,  # and other variables as needed
-                   data = div_panel_model,
+library(lmtest)
+library(sandwich)
+library(ggplot2)
+
+# -------------------------------------------------------------------
+# 1. Filter the panel dataset for periods from 2001 onward.
+# -------------------------------------------------------------------
+div_panel_model_filtered <- div_panel_model %>%
+  filter(period_2yr >= 2001) %>%
+  mutate(period_factor = factor(period_2yr))  # create a factor for period fixed effects
+
+# -------------------------------------------------------------------
+# 2. Specify the regression formula.
+#    (Your dependent variable is normalized_div_prop; predictors include fed_rate,
+#     trail_1yr, num_funds, capital_raised, avg_size, avg_spread, lag4_win_med, 
+#     AUM_line, LPType, avg_preqin_quartile_rank, and period fixed effects.)
+# -------------------------------------------------------------------
+model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds + 
+  capital_raised + avg_size + avg_spread + lag4_win_excess_med + AUM_line + LPType + 
+ period_factor
+
+# -------------------------------------------------------------------
+# 3. Run the panel regression using plm (within estimator = fixed effects).
+# -------------------------------------------------------------------
+panel_model <- plm(model_formula, 
+                   data = div_panel_model_filtered, 
                    index = c("lp", "period_2yr"),
                    model = "within")
+
 summary(panel_model)
+
+# -------------------------------------------------------------------
+# 4. Obtain standard errors clustered at the LP level.
+# -------------------------------------------------------------------
+clustered_vcov <- vcovHC(panel_model, type = "HC1", cluster = "group")
+coeftest(panel_model, vcov = clustered_vcov)
+
+# -------------------------------------------------------------------
+# 5. Run Diagnostic Tests:
+# -------------------------------------------------------------------
+# (a) Breusch-Godfrey test for serial correlation in panel data.
+bg_test <- pbgtest(panel_model)
+print(bg_test)
+
+# (b) Pesaran's test for cross-sectional dependence.
+csd_test <- pcdtest(panel_model, test = "cd")
+print(csd_test)
+
+# (c) Breusch-Pagan test for heteroskedasticity.
+bp_test <- bptest(panel_model)
+print(bp_test)
+
+# (d) Ramsey RESET test for model specification.
+# Note: resettest() from lmtest works on lm objects, so one workaround is to extract the "within" model.
+reset_test <- resettest(panel_model, power = 2:3, type = "fitted")
+print(reset_test)
+
+```
+```{r}
+library(plm)
+library(lmtest)
+library(sandwich)
+library(dplyr)
+
+# Filter the panel data to include only periods from 2001 onward.
+div_panel_model_RE <- div_panel_model %>%
+  filter(period_2yr >= 2001)
+
+# Create a period fixed effect as a factor (if not already done)
+div_panel_model_RE <- div_panel_model_RE %>%
+  mutate(LPType = factor(LPType))
+
+# Specify the regression formula.
+# Note: 'LPType' should be a factor if it's categorical.
+model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds + 
+  capital_raised + avg_size + avg_spread + lag4_win_med + AUM_line + LPType + 
+  avg_preqin_quartile_rank
+
+# Estimate the random effects model using plm.
+# The "random" model here allows the time-invariant variables to be estimated.
+panel_model_re <- plm(model_formula, 
+                      data = div_panel_model_RE, 
+                      index = c("lp", "period_2yr"),
+                      model = "random", random.method = "walhus")
+
+# Display the summary of the random effects model.
+summary(panel_model_re)
+
+# Cluster standard errors at the LP level.
+clustered_vcov_re <- vcovHC(panel_model_re, type = "HC1", cluster = "group")
+coeftest(panel_model_re, vcov = clustered_vcov_re)
+
+
 
 ```
 
