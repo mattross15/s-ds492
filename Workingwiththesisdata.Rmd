@@ -7,6 +7,11 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+```{r}
 library(tidyverse)
 library(readxl)
 library(tidytext)
@@ -20,11 +25,9 @@ library(ggplot2)
 library(lubridate)
 library(xts)
 library(PerformanceAnalytics)
-```
-
-
-```{r}
-
+library(conflicted)
+conflict_prefer("select", "dplyr")
+conflicts_prefer(dplyr::filter)
 
 # Read in your data files
 lpdata <- read.csv("/Users/mross/Downloads/master.csv")
@@ -63,9 +66,9 @@ funddata_sub <- funddata %>%
     `MEDIAN BENCHMARK CALLED (%)`,
     `BENCHMARK NAME`,
     `GEOGRAPHIC FOCUS`,
-    `STRATEGY`
+    `STRATEGY`,
+    `FUND NUMBER (SERIES)`
   )
-
 
 length(unique(lpdata$FUND.ID))
 
@@ -1156,64 +1159,6 @@ p_strategy <- ggplot(df_strategy_vintage, aes(x = VINTAGE, y = median_IRR, color
 print(p_strategy)
 
 ```
-```{r}
-
-
-# Define a vector of strategy-related keywords (all in lower-case) 
-# (now including "cambridge_associates" instead of "cambridge")
-strategy_keywords <- c("advisor", "consultant", "in-house", "outside", 
-                       "cambridge_associates", "stepstone", "nepc", "hamilton", "meketa",
-                       "investment", "primary", "secondary", "venture", "buyout", 
-                       "growth", "direct")
-
-# Pre-process text: convert to lower-case and join "cambridge associates" into one token
-preqindata_new <- preqindata_new %>% 
-  mutate(
-    PE_Summary = str_to_lower(PE_Summary),
-    PE_Summary = str_replace_all(PE_Summary, regex("cambridge associates", ignore_case = TRUE), "cambridge_associates")
-  )
-
-# 1. Unnest tokens from the text
-df_text <- preqindata_new %>%
-  select(LP_Name, PE_Summary) %>%
-  unnest_tokens(word, PE_Summary)
-
-# 2. Remove stopwords
-data("stop_words")
-df_text_clean <- df_text %>%
-  anti_join(stop_words, by = "word")
-
-# 3. Count word frequency
-word_freq <- df_text_clean %>%
-  count(word, sort = TRUE)
-
-# 4. Filter out words with frequency less than 5
-word_freq_filtered <- word_freq %>% 
-  filter(n >= 5)
-
-# 5. Flag words that are strategy-related
-word_freq_filtered <- word_freq_filtered %>%
-  mutate(is_strategy = if_else(word %in% strategy_keywords, TRUE, FALSE))
-
-# 6. Create a color vector: strategy words in red, others in blue
-word_colors <- ifelse(word_freq_filtered$is_strategy, "red", "blue")
-
-# 7. Generate the word cloud with ordered.colors = TRUE to preserve the mapping
-wordcloud(
-  words = word_freq_filtered$word,
-  freq = word_freq_filtered$n,
-  scale = c(4, 0.5),
-  min.freq = 5,
-  max.words = Inf,
-  random.order = FALSE,
-  random.color = FALSE,
-  rot.per = 0.1,
-  colors = word_colors,
-  ordered.colors = TRUE,
-  fixed.asp = TRUE
-)
-
-```
 
 ```{r}
 
@@ -1310,8 +1255,8 @@ plot(g_lp,
 )
 
 # Add a legend for node colors (LPType)
-legend("topleft",
-       legend = c("Insurance Company", "Public Pension Fund", "Endowment"),
+ graphics::legend("topleft",
+      legend = c("Insurance Company", "Public Pension Fund", "Endowment"),
        col = c("red", "skyblue", "green"),
        pch = 16, pt.cex = 1.5,
        title = "LP Type",
@@ -1419,7 +1364,7 @@ lp_modeling <- preqindata_new %>%
     in_house
   )
 
-lp_changes <- read.csv("/Users/mross/Downloads/HistoricalActivity_AllLPs_Cleaned.csv")
+
 
 library(stringr)
 
@@ -1500,7 +1445,35 @@ final_modeling <- final_modeling %>%
     TRUE ~ "Diversified Multi-Regional"
   ))
 final_modeling
+
+
+
 ```
+getting time specific shocks for LPs
+
+```{r}
+
+lp_fund_counts <- final_modeling %>%
+  group_by(lp) %>%
+  summarise(num_funds = n_distinct(fund_id))
+
+
+# View the first few rows of the summary
+lp_fund_counts %>% arrange(desc(num_funds))
+
+# Plot the distribution using a histogram
+ggplot(lp_fund_counts, aes(x = num_funds)) +
+  geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
+  theme_minimal() +
+  labs(
+    title = "Distribution of Total Number of Funds per LP",
+    x = "Total Number of Funds",
+    y = "Count of LPs"
+  )
+```
+
+
+
 creating divergence metric
 
 ```{r}
@@ -1513,9 +1486,6 @@ final_modeling_filtered <- final_modeling %>%
   filter(!is.na(vintage_inception_year),
          vintage_inception_year <= max_yr)
 
-
-# Define a function to expand each fund into a series of two‐year periods.
-# Each fund is counted once.
 expand_fund_periods_2yr <- function(lp, vintage, strat, min_yr, max_yr) {
   # Force vintage to be at least min_yr.
   start_yr <- max(vintage, min_yr)
@@ -1595,22 +1565,21 @@ lp_shares_prop <- lp_shares_prop %>%
   left_join(lp_totals, by = c("lp", "period_2yr"))
 
 # Specify the strategy share columns.
-prop_strategy_cols <- c("Buyout", "Growth Equity", "Secondaries", "Fund of Funds",
-                        "Co-Investment", "Early Stage Venture", "Balanced", "Other", "Venture (General)")
+prop_strategy_cols <- c("Buyout", "Early Stage Venture", "Venture (General)", "Secondaries", "Growth Equity", "Co-Investment", "Fund of Funds","Balanced", "Other")
 
 # For each LP, compute the positive change in cumulative proportions between consecutive periods.
 # (For each strategy, pmax(current - lag, 0)) and sum over strategies.
 lp_shares_prop <- lp_shares_prop %>%
-  arrange(period_2yr) %>%
   arrange(lp) %>%
+  arrange(period_2yr) %>%
   group_by(lp) %>%
   mutate(
-    divergence_prop = rowSums(across(all_of(prop_strategy_cols), ~ pmax(. - lag(.), 0)), na.rm = TRUE),
+    divergence_prop = rowSums(across(all_of(prop_strategy_cols), ~ pmax(. - dplyr::lag(.), 0)), na.rm = TRUE),
     normalized_div_prop = divergence_prop * sqrt(cum_total_funds.x)
   ) %>%
   ungroup()
 
-
+colnames(lp_shares_prop)
 # --- Summarize Proportions Divergence by Period ---
 div_prop_summary <- lp_shares_prop %>%
   filter(!is.na(normalized_div_prop)) %>%
@@ -1630,21 +1599,26 @@ ggplot(div_prop_summary, aes(x = period_2yr, y = mean_norm_div_prop)) +
   geom_line(color = "darkgreen", size = 1) +
   geom_ribbon(aes(ymin = lower_prop, ymax = upper_prop), fill = "darkgreen", alpha = 0.2) +
   labs(
-    title = "Mean Normalized Proportions Divergence Over Two-Year Periods",
-    x = "Two-Year Period",
+    title = "Mean Normalized Proportions Divergence Over Vintage Years",
+    x = "Year",
     y = "Mean Normalized Proportions Divergence"
   ) +
   theme_minimal()
+
+# write.csv(lp_shares_prop, "lp_shares_prop.csv")
+
 ```
-visualizing strategie divergence over time
+
+visualizing strategies divergence over time
 ```{r}
 
 
 # Assume lp_shares_prop is your wide-format dataframe with columns: 
 # lp, period_2yr, and strategy columns (as defined in prop_strategy_cols).
 # prop_strategy_cols should be defined as:
-prop_strategy_cols <- c( "Growth Equity", "Secondaries", "Fund of Funds",
-                        "Co-Investment", "Early Stage Venture", "Balanced", "Other", "Venture (General)")
+# prop_strategy_cols <- c( "Growth.Equity", "Secondaries", "Fund.of.Funds",
+#                         "Co.Investment", "Early.Stage.Venture", "Balanced", "Other", "Venture..General.")
+prop_strategy_cols <- c("Buyout", "Early Stage Venture", "Venture (General)", "Secondaries", "Growth Equity", "Co-Investment", "Fund of Funds","Balanced", "Other")
 
 # Pivot the data to long format so that each row represents one LP, period, and strategy.
 lp_shares_long <- lp_shares_prop %>%
@@ -1657,7 +1631,7 @@ lp_shares_long <- lp_shares_prop %>%
   arrange(period_2yr, .by_group = TRUE) %>%
   # Compute divergence for each strategy as the positive change from the previous period.
   mutate(
-    divergence_indiv = pmax(strategy_share - lag(strategy_share), 0)
+    divergence_indiv = pmax(strategy_share - dplyr::lag(strategy_share), 0)
   ) %>%
   ungroup()
 
@@ -1687,6 +1661,50 @@ ggplot(div_strategy_summary, aes(x = period_2yr, y = mean_div, color = strategy)
   theme_minimal()
 ```
 exogneous variables and such
+```{r}
+lp_lptype <- final_modeling %>%
+  select(lp, LPType) %>%
+  distinct()
+
+# Join the LPType information to lp_shares_prop.
+lp_shares_prop_with_type <- lp_shares_prop %>%
+  left_join(lp_lptype, by = "lp")
+
+# (If not already computed, ensure that normalized_div_prop is available.
+# You may have computed it as follows:)
+lp_shares_prop_with_type <- lp_shares_prop_with_type %>%
+  arrange(lp, period_2yr) %>%
+  group_by(lp) %>%
+  mutate(
+    divergence_prop = rowSums(across(all_of(prop_strategy_cols), 
+                                      ~ pmax(. - dplyr::lag(.), 0)), na.rm = TRUE),
+    normalized_div_prop = divergence_prop * sqrt(cum_total_funds.x)
+  ) %>%
+  ungroup()
+
+# Summarize the median normalized divergence (and, optionally, a 25th–75th percentile band)
+div_lptype_summary <- lp_shares_prop_with_type %>%
+  filter(!is.na(normalized_div_prop)) %>%  # drop first-period NAs from lag
+  group_by(period_2yr, LPType) %>%
+  summarize(
+    median_div = mean(normalized_div_prop, na.rm = TRUE),
+    lower = quantile(normalized_div_prop, 0.25, na.rm = TRUE),
+    upper = quantile(normalized_div_prop, 0.75, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Plot the median divergence over time by LPType.
+ggplot(div_lptype_summary, aes(x = period_2yr, y = median_div, color = LPType)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = LPType), 
+              alpha = 0.2, color = NA) +
+  labs(
+    title = "Median Normalized Divergence Over Time by LPType",
+    x = "Year",
+    y = "Median Normalized Divergence"
+  ) +
+  theme_minimal()
+```
 
 ```{r}
 fed <- read.csv("/Users/mross/Desktop/fed_cleaned.csv")
@@ -1793,22 +1811,79 @@ ggplot(exogenous_long, aes(x = year, y = return, color = trailing)) +
 
 colnames(final_modeling)
 ```
-
+more plots
 ```{r}
-div_panel_model <- lp_shares_prop %>% select(lp, period_2yr, divergence_prop, normalized_div_prop)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# Create a new dataset for LP-level manager performance using net_irr as the performance metric.
+lp_perf_new <- final_modeling %>%
+  group_by(lp) %>%
+  summarize(manager_return = mean(net_irr, na.rm = TRUE), .groups = "drop")
+
+# Calculate the 25th and 75th percentiles of manager performance.
+q25 <- quantile(lp_perf_new$manager_return, 0.25, na.rm = TRUE)
+q75 <- quantile(lp_perf_new$manager_return, 0.75, na.rm = TRUE)
+
+# Create a new grouping variable based on these thresholds.
+lp_perf_new <- lp_perf_new %>%
+  mutate(manager_quartile = case_when(
+    manager_return <= q25 ~ "Lower Quartile",
+    manager_return >= q75 ~ "Upper Quartile",
+    TRUE ~ "Middle"
+  ))
+
+# Do not modify final_modeling in place; instead, create a new dataset by joining the performance data
+# to your divergence data (assumed to be in lp_shares_prop_with_type).
+lp_shares_prop_with_type_new <- lp_shares_prop_with_type %>%
+  left_join(lp_perf_new, by = "lp")
+
+# Filter to keep only LPs whose managers are in the Upper or Lower quartile.
+lp_shares_prop_ul <- lp_shares_prop_with_type_new %>%
+  filter(manager_quartile %in% c("Upper Quartile", "Lower Quartile"))
+
+# Summarize the median normalized divergence by period, LPType, and manager performance quartile.
+div_summary_ul <- lp_shares_prop_ul %>%
+  group_by(period_2yr, LPType, manager_quartile) %>%
+  summarize(
+    median_norm_div = median(normalized_div_prop, na.rm = TRUE),
+    lower = quantile(normalized_div_prop, 0.25, na.rm = TRUE),
+    upper = quantile(normalized_div_prop, 0.75, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Plot the median normalized divergence over time, faceted by LPType.
+ggplot(div_summary_ul, aes(x = period_2yr, y = median_norm_div, color = manager_quartile)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = manager_quartile), alpha = 0.2, color = NA) +
+  facet_wrap(~ LPType) +
+  labs(
+    title = "Median Normalized Divergence Over Time by Manager Performance Quartile",
+    x = "Year",
+    y = "Median Normalized Divergence",
+    color = "Manager Performance",
+    fill = "Manager Performance"
+  ) +
+  theme_minimal()
+
+```
+
+performance variables
+```{r}
+div_panel_model <- lp_shares_prop %>% select(lp, period_2yr, divergence_prop, normalized_div_prop, cum_total_funds.x)
 div_panel_model <- left_join(div_panel_model, exogenous, by = c("period_2yr" = "year"))
 
-library(dplyr)
-library(tidyr)
-library(purrr)
-library(ggplot2)
-
-final_modeling_filtered %>% filter(lp == "AIG") %>% arrange(vintage_inception_year)
-
 fund_perf <- final_modeling_filtered %>%
-  select(lp, vintage_inception_year, net_irr)
-
-# Function to compute lagged performance.
+  select(lp, vintage_inception_year, net_irr, 
+         `median_benchmark_net_irr_%`, `average_benchmark_net_irr_%`) %>%
+  mutate(
+    net_irr = as.numeric(net_irr),
+    `median_benchmark_net_irr_%` = as.numeric(`median_benchmark_net_irr_%`),
+    `average_benchmark_net_irr_%` = as.numeric(`average_benchmark_net_irr_%`)
+  )
+# --------------------------------------------------
+# Function to compute lagged performance (both median and mean).
 compute_lagged_perf <- function(current_year, lp_id, gap, window_length = NA) {
   lower_bound <- if (!is.na(window_length)) current_year - window_length else -Inf
   upper_bound <- current_year - gap
@@ -1825,26 +1900,53 @@ compute_lagged_perf <- function(current_year, lp_id, gap, window_length = NA) {
   }
 }
 
-# Function for benchmark performance (across all LPs).
-compute_benchmark_perf <- function(current_year, gap, window_length = NA) {
+
+# --------------------------------------------------
+# New function to compute excess performance.
+# For each fund in the window:
+# - For the median aggregation, subtract the fund's median benchmark net IRR.
+# - For the mean aggregation, subtract the fund's average benchmark net IRR.
+compute_excess_perf_correct <- function(current_year, lp_id, gap, window_length = NA) {
   lower_bound <- if (!is.na(window_length)) current_year - window_length else -Inf
   upper_bound <- current_year - gap
   vals <- fund_perf %>%
-    filter(vintage_inception_year >= lower_bound,
-           vintage_inception_year <= upper_bound) %>%
-    pull(net_irr)
-  if (length(vals) == 0) {
+    filter(lp == lp_id,
+           vintage_inception_year >= lower_bound,
+           vintage_inception_year <= upper_bound)
+  if(nrow(vals) == 0) {
     return(c(median = NA_real_, mean = NA_real_))
   } else {
-    return(c(median = median(vals, na.rm = TRUE),
-             mean = mean(vals, na.rm = TRUE)))
+    # For median aggregation: use median_benchmark_net_irr_%
+    excess_median <- vals$net_irr - vals$`median_benchmark_net_irr_%`
+    # For mean aggregation: use average_benchmark_net_irr_%
+    excess_mean   <- vals$net_irr - vals$`average_benchmark_net_irr_%`
+    return(c(median = median(excess_median, na.rm = TRUE),
+             mean = mean(excess_mean, na.rm = TRUE)))
   }
 }
 
-# Calculate lagged performance columns directly (without nesting) by calling the function and extracting the value.
+compute_lagged_mean_value <- function(current_year, lp_id, gap, window_length = NA, varname) {
+  lower_bound <- if (!is.na(window_length)) current_year - window_length else -Inf
+  upper_bound <- current_year - gap
+  vals <- final_modeling_filtered %>%
+    filter(lp == lp_id,
+           vintage_inception_year >= lower_bound,
+           vintage_inception_year <= upper_bound) %>%
+    pull({{ varname }})
+  if (length(vals) == 0) {
+    return(NA_real_)
+  } else {
+    return(mean(vals, na.rm = TRUE))
+  }
+}
+
+
+# --------------------------------------------------
+# Calculate lagged performance and corrected excess performance columns.
 div_panel_model <- div_panel_model %>%
   rowwise() %>%
   mutate(
+    # Lagged performance: "win" and "nowin" versions with a 10-year window and unbounded window.
     lag2_win_med   = compute_lagged_perf(period_2yr, lp, gap = 2, window_length = 10)[["median"]],
     lag2_win_mean  = compute_lagged_perf(period_2yr, lp, gap = 2, window_length = 10)[["mean"]],
     lag2_nowin_med = compute_lagged_perf(period_2yr, lp, gap = 2, window_length = NA)[["median"]],
@@ -1856,47 +1958,24 @@ div_panel_model <- div_panel_model %>%
     lag4_win_med   = compute_lagged_perf(period_2yr, lp, gap = 4, window_length = 10)[["median"]],
     lag4_win_mean  = compute_lagged_perf(period_2yr, lp, gap = 4, window_length = 10)[["mean"]],
     lag4_nowin_med = compute_lagged_perf(period_2yr, lp, gap = 4, window_length = NA)[["median"]],
-    lag4_nowin_mean= compute_lagged_perf(period_2yr, lp, gap = 4, window_length = NA)[["mean"]]
+    lag4_nowin_mean= compute_lagged_perf(period_2yr, lp, gap = 4, window_length = NA)[["mean"]],
+    # Corrected excess performance: use the new function to compute excess performance.
+    lag2_excess_med  = compute_excess_perf_correct(period_2yr, lp, gap = 2, window_length = 10)[["median"]],
+    lag2_excess_mean = compute_excess_perf_correct(period_2yr, lp, gap = 2, window_length = 10)[["mean"]],
+    lag3_excess_med  = compute_excess_perf_correct(period_2yr, lp, gap = 3, window_length = 10)[["median"]],
+    lag3_excess_mean = compute_excess_perf_correct(period_2yr, lp, gap = 3, window_length = 10)[["mean"]],
+    lag4_excess_med  = compute_excess_perf_correct(period_2yr, lp, gap = 4, window_length = 10)[["median"]],
+    lag4_excess_mean = compute_excess_perf_correct(period_2yr, lp, gap = 4, window_length = 10)[["mean"]],
+    log_current_lag_avg_close_size = log(compute_lagged_mean_value(period_2yr, lp, gap = 1, window_length = NA, final_close_size_usd_mn)),
+    log_current_lag_avg_manager_aum = log(compute_lagged_mean_value(period_2yr, lp, gap = 1, window_length = NA, fund_manager_total_aum_usd_mn)),
+    current_lag_avg_close_size = compute_lagged_mean_value(period_2yr, lp, gap = 1, window_length = NA, final_close_size_usd_mn),
+    current_lag_avg_manager_aum = compute_lagged_mean_value(period_2yr, lp, gap = 1, window_length = NA, fund_manager_total_aum_usd_mn),
+    lag_fund_series = log(compute_lagged_mean_value(period_2yr, lp, gap = 1, window_length = NA, fund_number_series)),
   ) %>%
   ungroup()
 
-# Calculate benchmark performance for each period (across all LPs).
-div_panel_model <- div_panel_model %>%
-  rowwise() %>%
-  mutate(
-    bench2_win_med   = compute_benchmark_perf(period_2yr, gap = 2, window_length = 10)[["median"]],
-    bench2_win_mean  = compute_benchmark_perf(period_2yr, gap = 2, window_length = 10)[["mean"]],
-    bench2_nowin_med = compute_benchmark_perf(period_2yr, gap = 2, window_length = NA)[["median"]],
-    bench2_nowin_mean= compute_benchmark_perf(period_2yr, gap = 2, window_length = NA)[["mean"]],
-    bench3_win_med   = compute_benchmark_perf(period_2yr, gap = 3, window_length = 10)[["median"]],
-    bench3_win_mean  = compute_benchmark_perf(period_2yr, gap = 3, window_length = 10)[["mean"]],
-    bench3_nowin_med = compute_benchmark_perf(period_2yr, gap = 3, window_length = NA)[["median"]],
-    bench3_nowin_mean= compute_benchmark_perf(period_2yr, gap = 3, window_length = NA)[["mean"]],
-    bench4_win_med   = compute_benchmark_perf(period_2yr, gap = 4, window_length = 10)[["median"]],
-    bench4_win_mean  = compute_benchmark_perf(period_2yr, gap = 4, window_length = 10)[["mean"]],
-    bench4_nowin_med = compute_benchmark_perf(period_2yr, gap = 4, window_length = NA)[["median"]],
-    bench4_nowin_mean= compute_benchmark_perf(period_2yr, gap = 4, window_length = NA)[["mean"]]
-  ) %>%
-  ungroup()
-
-# Calculate excess performance as LP lagged performance minus benchmark performance.
-div_panel_model <- div_panel_model %>%
-  mutate(
-    lag2_win_excess_med   = lag2_win_med   - bench2_win_med,
-    lag2_win_excess_mean  = lag2_win_mean  - bench2_win_mean,
-    lag2_nowin_excess_med = lag2_nowin_med - bench2_nowin_med,
-    lag2_nowin_excess_mean= lag2_nowin_mean- bench2_nowin_mean,
-    lag3_win_excess_med   = lag3_win_med   - bench3_win_med,
-    lag3_win_excess_mean  = lag3_win_mean  - bench3_win_mean,
-    lag3_nowin_excess_med = lag3_nowin_med - bench3_nowin_med,
-    lag3_nowin_excess_mean= lag3_nowin_mean- bench3_nowin_mean,
-    lag4_win_excess_med   = lag4_win_med   - bench4_win_med,
-    lag4_win_excess_mean  = lag4_win_mean  - bench4_win_mean,
-    lag4_nowin_excess_med = lag4_nowin_med - bench4_nowin_med,
-    lag4_nowin_excess_mean= lag4_nowin_mean- bench4_nowin_mean
-  )
-
-### 3. Incorporate LP Characteristics and Preqin Ranking
+# --------------------------------------------------
+# Incorporate LP Characteristics and Preqin Ranking.
 
 # Get LP-level characteristics.
 lp_info <- final_modeling_filtered %>%
@@ -1905,17 +1984,10 @@ lp_info <- final_modeling_filtered %>%
 div_panel_model <- div_panel_model %>%
   left_join(lp_info, by = "lp")
 
-# Calculate the average preqin_quartile_rank for each period.
-preqin_rank_by_period <- final_modeling_filtered %>%
-  mutate(period = 1 * floor((vintage_inception_year - min_yr) / 1) + min_yr) %>%
-  group_by(period) %>%
-  summarize(avg_preqin_quartile_rank = mean(preqin_quartile_rank, na.rm = TRUE), .groups = "drop")
-div_panel_model <- div_panel_model %>%
-  left_join(preqin_rank_by_period, by = c("period_2yr" = "period"))
+# For each LP and period, calculate the cumulative average using only funds with vintage < period.
 
-
-colnames(div_panel_model)
 ```
+checking linearity of predictors for pr model
 ```{r}
 # Load required libraries
 library(dplyr)
@@ -1923,6 +1995,8 @@ library(plm)
 library(lmtest)
 library(sandwich)
 library(ggplot2)
+library(rlang)
+
 
 # -------------------------------------------------------------------
 # 1. Filter the panel dataset for periods from 2001 onward.
@@ -1931,15 +2005,82 @@ div_panel_model_filtered <- div_panel_model %>%
   filter(period_2yr >= 2001) %>%
   mutate(period_factor = factor(period_2yr))  # create a factor for period fixed effects
 
-# -------------------------------------------------------------------
-# 2. Specify the regression formula.
-#    (Your dependent variable is normalized_div_prop; predictors include fed_rate,
-#     trail_1yr, num_funds, capital_raised, avg_size, avg_spread, lag4_win_med, 
-#     AUM_line, LPType, avg_preqin_quartile_rank, and period fixed effects.)
-# -------------------------------------------------------------------
-model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds + 
-  capital_raised + avg_size + avg_spread + lag4_win_excess_med + AUM_line + LPType + 
- period_factor
+
+predictors <- c("fed_rate", "trail_3yr", "num_funds", "avg_size", "avg_spread", 
+                "lag4_excess_med", "cum_total_funds.x")
+
+
+# ----- 1. Plotting Macro-Level (Static) Predictors -----
+# These variables are assumed to be the same for every LP in a given period.
+static_predictors <- c("fed_rate", "trail_3yr", "num_funds", "avg_size", "avg_spread")
+
+# Aggregate by period: for each period, take the first value of each predictor (since they are static)
+# and calculate the mean normalized divergence (across LPs)
+static_agg <- div_panel_model_filtered %>%
+  group_by(period_2yr) %>%
+  summarize(across(all_of(static_predictors), ~ dplyr::first(.), .names = "{.col}"),
+            mean_div = mean(normalized_div_prop, na.rm = TRUE),
+            .groups = "drop")
+
+# Loop over each static predictor and create two plots: one for the raw predictor and one for the log-transformed predictor.
+for (pred in static_predictors) {
+  # Plot raw predictor vs. mean divergence
+  p1 <- ggplot(static_agg, aes_string(x = pred, y = "mean_div")) +
+    geom_point(size = 3) +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    labs(title = paste("Mean Normalized Divergence vs", pred, "(Raw)"),
+         x = pred, y = "Mean Normalized Divergence") +
+    theme_minimal()
+  print(p1)
+  
+  # Create a new column for the log-transformed predictor.
+  static_agg <- static_agg %>%
+    mutate(!!paste0("log_", pred) := log(.data[[pred]]))
+  
+  # Plot log-transformed predictor vs. mean divergence
+  p2 <- ggplot(static_agg, aes_string(x = paste0("log_", pred), y = "mean_div")) +
+    geom_point(size = 3) +
+    geom_smooth(method = "lm", se = FALSE, color = "blue") +
+    labs(title = paste("Mean Normalized Divergence vs", pred, "(Log Transformed)"),
+         x = paste("log(", pred, ")", sep = ""), y = "Mean Normalized Divergence") +
+    theme_minimal()
+  print(p2)
+}
+
+# ----- 2. Plotting Dynamic Predictors -----
+# These variables vary by LP and period.
+dynamic_predictors <- c("lag4_excess_med", "cum_total_funds.x")
+
+for (pred in dynamic_predictors) {
+  # Plot raw predictor vs. normalized divergence (scatter plot)
+  p3 <- ggplot(div_panel_model_filtered, aes_string(x = pred, y = "normalized_div_prop")) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    labs(title = paste("Normalized Divergence vs", pred, "(Raw)"),
+         x = pred, y = "Normalized Divergence") +
+    theme_minimal()
+  print(p3)
+  
+  # Plot log-transformed predictor vs. normalized divergence.
+  # Here we use aes_string() with an inline transformation.
+  p4 <- ggplot(div_panel_model_filtered, aes_string(x = paste0("log(", pred, ")"), y = "normalized_div_prop")) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", se = FALSE, color = "blue") +
+    labs(title = paste("Normalized Divergence vs", pred, "(Log Transformed)"),
+         x = paste("log(", pred, ")", sep = ""), y = "Normalized Divergence") +
+    theme_minimal()
+  print(p4)
+}
+
+div_panel_model_filtered <- div_panel_model_filtered %>%
+  mutate(log_cum_total_funds = log(cum_total_funds.x))
+
+```
+
+fixed effects model
+```{r}
+
+model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds + avg_size + avg_spread + lag4_nowin_med + AUM_line + LPType + log_cum_total_funds + log_current_lag_avg_close_size + log_current_lag_avg_manager_aum + period_factor
 
 # -------------------------------------------------------------------
 # 3. Run the panel regression using plm (within estimator = fixed effects).
@@ -1947,15 +2088,31 @@ model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds +
 panel_model <- plm(model_formula, 
                    data = div_panel_model_filtered, 
                    index = c("lp", "period_2yr"),
-                   model = "within")
+                   model = "within", within = TRUE)
+
+?plm()
 
 summary(panel_model)
 
 # -------------------------------------------------------------------
 # 4. Obtain standard errors clustered at the LP level.
 # -------------------------------------------------------------------
-clustered_vcov <- vcovHC(panel_model, type = "HC1", cluster = "group")
-coeftest(panel_model, vcov = clustered_vcov)
+
+
+clustered_vcov_HC1 <- vcovHC(panel_model, type = "HC1", cluster = "group", method = "white1")
+clustered_vcov_HC2 <- vcovHC(panel_model, type = "HC1", cluster = "group", method = "arellano")
+clustered_vcov_HC3 <- vcovHC(panel_model, type = "HC3", cluster = "group")
+
+?
+# Compare coefficient tests:
+cat("Using HC1:\n")
+print(coeftest(panel_model, vcov = clustered_vcov_HC1))
+
+cat("Using HC2:\n")
+print(coeftest(panel_model, vcov = clustered_vcov_HC2))
+
+cat("Using HC3:\n")
+print(coeftest(panel_model, vcov = clustered_vcov_HC3))
 
 # -------------------------------------------------------------------
 # 5. Run Diagnostic Tests:
@@ -1972,12 +2129,52 @@ print(csd_test)
 bp_test <- bptest(panel_model)
 print(bp_test)
 
-# (d) Ramsey RESET test for model specification.
-# Note: resettest() from lmtest works on lm objects, so one workaround is to extract the "within" model.
-reset_test <- resettest(panel_model, power = 2:3, type = "fitted")
-print(reset_test)
+summary(div_panel_model_filtered$normalized_div_prop)
+?plm()
+```
+estimating size of fixed effects
+
+```{r}
+# Extract the fixed effects (LP-specific intercepts)
+lp_fixed_effects <- fixef(panel_model)
+# Convert them to a data frame
+lp_fixed_effects_df <- tibble(
+  lp = names(lp_fixed_effects),
+  fixed_effect = as.numeric(lp_fixed_effects)
+)
+
+# Assume you have a dataset 'lp_info' with LP-level characteristics (e.g., LPType)
+# If not, create it from your final_modeling_filtered:
+lp_info <- final_modeling_filtered %>%
+  select(lp, LPType) %>%
+  distinct()
+
+# Join the fixed effects with the LP characteristics
+lp_fixed_effects_df <- lp_fixed_effects_df %>%
+  left_join(lp_info, by = "lp")
+
+# Now you can inspect or summarize the fixed effects by LPType.
+# For example, compute the mean fixed effect by LPType:
+lp_fixed_effects_summary <- lp_fixed_effects_df %>%
+  group_by(LPType) %>%
+  summarize(
+    median_fixed_effect = median(fixed_effect, na.rm = TRUE),
+    n = n()
+  )
+print(lp_fixed_effects_summary)
+
+# Or plot the distribution of fixed effects by LPType:
+ggplot(lp_fixed_effects_df, aes(x = LPType, y = fixed_effect)) +
+  geom_boxplot() +
+  labs(title = "Distribution of LP Fixed Effects by LP Type",
+       x = "LP Type", y = "LP Fixed Effect") +
+  theme_minimal()
 
 ```
+
+
+random effects model
+
 ```{r}
 library(plm)
 library(lmtest)
@@ -1990,13 +2187,19 @@ div_panel_model_RE <- div_panel_model %>%
 
 # Create a period fixed effect as a factor (if not already done)
 div_panel_model_RE <- div_panel_model_RE %>%
-  mutate(LPType = factor(LPType))
+  mutate(LPType = factor(LPType),
+         period_factor = factor(period_2yr),
+         log_fed_rate = log(fed_rate),
+         log_trail_1yr = log(trail_1yr),
+         log_capital_raised = log(capital_raised),
+         log_avg_size = log(avg_size),
+         log_avg_spread = log(avg_spread))
+        
 
 # Specify the regression formula.
 # Note: 'LPType' should be a factor if it's categorical.
-model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds + 
-  capital_raised + avg_size + avg_spread + lag4_win_med + AUM_line + LPType + 
-  avg_preqin_quartile_rank
+model_formula <- normalized_div_prop ~ log_fed_rate + trail_1yr + num_funds + 
+  log_capital_raised + log_avg_size + log_avg_spread + lag4_win_med + AUM_line + LPType
 
 # Estimate the random effects model using plm.
 # The "random" model here allows the time-invariant variables to be estimated.
@@ -2011,8 +2214,1155 @@ summary(panel_model_re)
 # Cluster standard errors at the LP level.
 clustered_vcov_re <- vcovHC(panel_model_re, type = "HC1", cluster = "group")
 coeftest(panel_model_re, vcov = clustered_vcov_re)
+```
+
+test for significance of any lagged performance indicator
+```{r}
+library(dplyr)
+library(plm)
+library(lmtest)
+library(sandwich)
+
+# Define your vector of performance metric names:
+performance_metrics <- c("lag2_win_med", "lag2_win_mean",
+                    "lag2_nowin_med", "lag2_nowin_mean",
+                    "lag3_win_med", "lag3_win_mean",
+                    "lag3_nowin_med", "lag3_nowin_mean",
+                    "lag4_win_med", "lag4_win_mean",
+                    "lag4_nowin_med", "lag4_nowin_mean",
+                    "lag2_excess_med", "lag2_excess_mean",
+                    "lag3_excess_med", "lag3_excess_mean",
+                    "lag4_excess_med")
+
+
+# Prepare an empty list to store results.
+results_list <- list()
+
+# Loop over each performance metric.
+for(metric in performance_metrics){
+  
+  # Construct the model formula dynamically.
+  # This replaces the performance metric in the baseline formula.
+  current_formula <- as.formula(paste(
+    "normalized_div_prop ~ fed_rate + trail_1yr + num_funds + ",
+    "avg_size + avg_spread +", metric, "+ AUM_line + LPType + log_cum_total_funds + log_current_lag_avg_close_size + log_current_lag_avg_manager_aum + period_factor"
+  ))
+  
+  # Run the panel regression using the 'within' estimator, 
+  # now with fund-level fixed effects (assuming 'fund' is the fund identifier).
+  current_model <- plm(current_formula, 
+                       data = div_panel_model_filtered, 
+                       index = c("lp", "period_2yr"),
+                       model = "within")
+  
+  # Obtain robust standard errors clustered at the fund level.
+  clustered_vcov_fund <- vcovHC(current_model, type = "HC1", cluster = "group")
+  
+  
+  # Run the t-test on coefficients.
+  test_result <- coeftest(current_model, vcov = clustered_vcov_fund)
+  
+  # Extract the row corresponding to the performance metric.
+  if(metric %in% rownames(test_result)){
+    metric_result <- test_result[metric, ]
+    results_list[[metric]] <- metric_result
+  } else {
+    results_list[[metric]] <- NA  # In case the metric is not in the model (e.g., missing)
+  }
+}
+
+# Combine all results into a single data frame.
+results_df <- do.call(rbind, results_list)
+print(results_df)
+
+```
+
+compare fixed effect and random effects
+```{r}
+library(plm)
+library(lmtest)
+
+# Suppose your panel data is in 'div_panel_model_filtered' 
+# with individual index "lp" and time index "period_2yr"
+# and your model formula is defined as:
+model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds +
+  capital_raised + avg_size + avg_spread + lag4_excess_med + AUM_line + LPType
+
+# Estimate the fixed effects model (within estimator)
+fe_model <- plm(model_formula, 
+                data = div_panel_model_filtered, 
+                index = c("lp", "period_2yr"), 
+                model = "within")
+
+# Estimate the random effects model
+re_model <- plm(model_formula, 
+                data = div_panel_model_filtered, 
+                index = c("lp", "period_2yr"), 
+                model = "random",
+                random.method = "walhus")
+
+# Conduct the Hausman test:
+hausman_result <- phtest(fe_model, re_model)
+print(hausman_result)
+
+```
+### Second panel regression model -- geographic divergence
+```{r}
+# Load necessary packages
+library(dplyr)
+library(tidyr)
+
+# Define your analysis period
+min_yr <- 2000
+max_yr <- 2022
+
+# Define a helper function to expand each fund's vintage into yearly periods.
+# Here, 'strat' is used to pass the geographic_focus value.
+expand_fund_periods_2yr <- function(lp, vintage, strat, min_yr, max_yr) {
+  # Ensure the fund's vintage is at least min_yr
+  start_yr <- max(vintage, min_yr)
+  # Create a sequence of years from start_yr to max_yr
+  yrs <- seq(start_yr, max_yr, by = 1)
+  tibble(
+    lp = lp,
+    period_2yr = yrs,   # This will serve as our time period indicator
+    geo_focus = strat,
+    fund_count = 1      # Each row represents one fund observation for that period
+  )
+}
+
+# Assume your data is in a data frame called final_modeling_filtered with columns:
+# lp, vintage_inception_year, and geographic_focus.
+
+# Step 1: Expand funds into yearly periods for geographic focus.
+expanded_geo <- final_modeling_filtered %>%
+  select(lp, vintage_inception_year, geographic_focus) %>%
+  rowwise() %>%
+  do(expand_fund_periods_2yr(
+    lp = .$lp,
+    vintage = .$vintage_inception_year,
+    strat = .$geographic_focus,
+    min_yr = min_yr,
+    max_yr = max_yr
+  )) %>%
+  ungroup()
+
+# Step 2: Aggregate counts by LP, period, and geographic category.
+lp_period_geo <- expanded_geo %>%
+  group_by(lp, period_2yr, geo_focus) %>%
+  summarise(num_funds = sum(fund_count, na.rm = TRUE), .groups = "drop")
+
+# Step 3: Compute cumulative counts for each LP and geographic category.
+lp_period_geo_cum <- lp_period_geo %>%
+  arrange(lp, period_2yr) %>%
+  group_by(lp, geo_focus) %>%
+  mutate(cum_geo = num_funds) %>%  # Adjust this if you need a true cumulative sum
+  ungroup()
+
+# Step 4: Compute cumulative total funds by LP and period.
+lp_period_totals <- lp_period_geo %>%
+  group_by(lp, period_2yr) %>%
+  summarise(period_total = sum(num_funds, na.rm = TRUE), .groups = "drop") %>%
+  arrange(lp, period_2yr) %>%
+  group_by(lp) %>%
+  mutate(cum_total_funds = period_total) %>%  # Adjust if you need a cumulative sum over periods
+  ungroup()
+
+# Step 5: Merge cumulative geographic counts with total funds and compute geographic share.
+lp_geo_shares <- lp_period_geo_cum %>%
+  left_join(lp_period_totals, by = c("lp", "period_2yr")) %>%
+  mutate(geo_share = if_else(cum_total_funds > 0, cum_geo / cum_total_funds, 0)) %>%
+  select(lp, period_2yr, geo_focus, geo_share)
+
+# Step 6: Pivot the data to wide format so that each geographic category is its own column,
+# and join the cumulative total funds.
+lp_geo_shares_wide <- lp_geo_shares %>%
+  pivot_wider(
+    names_from = geo_focus,
+    values_from = geo_share
+  ) %>%
+  left_join(lp_period_totals %>% select(lp, period_2yr, cum_total_funds), 
+            by = c("lp", "period_2yr"))
+
+# Specify the geographic columns (update these names if needed)
+geo_cols <- c("North America", "Asia", "Europe", "Australasia", 
+              "Americas", "Middle East & Israel", "Africa", "Diversified Multi-Regional")
+
+# Step 7: Compute divergence metric.
+# For each LP, for each geographic column, calculate the positive change in share from the previous period,
+# then sum these positive changes across all categories.
+lp_geo_shares_wide <- lp_geo_shares_wide %>%
+  arrange(lp, period_2yr) %>% 
+  group_by(lp) %>%
+  mutate(
+    divergence_geo = rowSums(across(all_of(geo_cols), ~ pmax(. - dplyr::lag(.), 0)), na.rm = TRUE),
+    normalized_div_geo = divergence_geo * sqrt(cum_total_funds)
+  ) %>%
+  ungroup()
 
 
 
 ```
+```{r}
+# # library(ggplot2)
+# # 
+# # Define the names of your response variables.
+# response_vars <- c("Buyout", "Venture_General", "Secondaries",
+#                    "Early Stage Venture", "Growth Equity", "Co-Investment",
+#                    "new_manager_prop")
+# 
+# 
+# 
+# # Loop over each variable and create a histogram.
+# for (var in response_vars) {
+#   p <- ggplot(lp_emissions, aes(x = .data[[var]])) +
+#     geom_histogram(bins = 30, fill = "skyblue", color = "black", alpha = 0.7) +
+#     labs(title = paste("Histogram of", var),
+#          x = var,
+#          y = "Count") +
+#     theme_minimal()
+#   print(p)
+# }
+
+
+```
+
+```{r}
+# library(dplyr)
+# library(tidyr)
+# library(purrr)
+# library(depmixS4)
+# library(lubridate)
+# library(ggplot2)
+# library(VGAM)
+# 
+# ### 1. Define Analysis Period and Bin Size ###
+# min_yr <- 2000
+# max_yr <- 2022
+# step <- 2  # Using 2-year bins; adjust as desired
+# 
+# ### 2. Expand Fund-Level Data into Multi-Year Periods ###
+# expand_fund_periods_4yr <- function(lp, vintage, strat, min_yr, max_yr, step) {
+#   start_yr <- max(vintage, min_yr)
+#   period_start <- min_yr + step * floor((start_yr - min_yr) / step)
+#   yrs <- seq(period_start, max_yr, by = step)
+#   tibble(
+#     lp = lp,
+#     period_4yr = yrs,
+#     strategy = strat,
+#     fund_count = 1
+#   )
+# }
+# 
+# final_modeling_filtered <- final_modeling %>%
+#   filter(!is.na(vintage_inception_year),
+#          vintage_inception_year <= max_yr)
+# 
+# expanded_4yr <- final_modeling_filtered %>%
+#   select(lp, vintage_inception_year, strategy, fund_manager) %>%
+#   rowwise() %>%
+#   do(expand_fund_periods_4yr(
+#     lp = .$lp,
+#     vintage = .$vintage_inception_year,
+#     strat = .$strategy,
+#     min_yr = min_yr,
+#     max_yr = max_yr,
+#     step = step
+#   )) %>%
+#   ungroup()
+# 
+# ### 3. Aggregate Strategy Counts and Compute Proportions ###
+# lp_period_strategy <- expanded_4yr %>%
+#   group_by(lp, period_4yr, strategy) %>%
+#   summarize(num_funds = sum(fund_count, na.rm = TRUE), .groups = "drop")
+# 
+# lp_period_totals <- lp_period_strategy %>%
+#   group_by(lp, period_4yr) %>%
+#   summarize(period_total = sum(num_funds, na.rm = TRUE), .groups = "drop")
+# 
+# lp_period_shares <- lp_period_strategy %>%
+#   left_join(lp_period_totals, by = c("lp", "period_4yr")) %>%
+#   mutate(strategy_share = if_else(period_total > 0, num_funds / period_total, 0)) %>%
+#   select(lp, period_4yr, strategy, strategy_share)
+# 
+# selected_strategies <- c("Buyout", "Venture (General)", "Secondaries", 
+#                          "Early Stage Venture", "Growth Equity", "Co-Investment")
+# 
+# lp_shares_wide <- lp_period_shares %>%
+#   filter(strategy %in% selected_strategies) %>%
+#   pivot_wider(
+#     names_from = strategy,
+#     values_from = strategy_share,
+#     values_fill = list(strategy_share = 0)
+#   )
+# 
+# ### 4. Calculate Cumulative New Manager Proportion ###
+# lp_managers_period <- final_modeling_filtered %>%
+#   select(lp, vintage_inception_year, fund_manager) %>%
+#   mutate(
+#     fund_manager = as.character(fund_manager),
+#     period_4yr = min_yr + step * floor((vintage_inception_year - min_yr) / step)
+#   ) %>%
+#   distinct()
+# 
+# lp_managers_cum <- lp_managers_period %>%
+#   group_by(lp, period_4yr) %>%
+#   summarize(current_managers = list(unique(fund_manager)), .groups = "drop") %>%
+#   arrange(lp, period_4yr) %>%
+#   group_by(lp) %>%
+#   mutate(
+#     cum_managers_all = accumulate(current_managers, base::union),
+#     cum_managers_prior = dplyr::lag(cum_managers_all, order_by = period_4yr, default = list(character(0)))
+#   ) %>%
+#   ungroup() %>%
+#   mutate(
+#     new_manager_count = map2_int(current_managers, cum_managers_prior, ~ length(setdiff(.x, .y))),
+#     total_current = map_int(current_managers, length),
+#     new_manager_prop = if_else(total_current > 0, new_manager_count / total_current, NA_real_)
+#   ) %>%
+#   select(lp, period_4yr, new_manager_prop)
+# 
+# ### 5. Merge Emissions Data ###
+# lp_emissions <- lp_shares_wide %>%
+#   left_join(lp_managers_cum, by = c("lp", "period_4yr")) %>%
+#   left_join(lp_period_totals, by = c("lp", "period_4yr"))
+# 
+# lp_emissions <- lp_emissions %>%
+#   rename(Venture_General = `Venture (General)`)
+# 
+# ### 6. Incorporate Exogenous Macro Variables + LP Characteristics ###
+# lp_emissions <- lp_emissions %>%
+#   mutate(year_bin = period_4yr) %>%
+#   left_join(exogenous, by = c("year_bin" = "year"))
+# 
+# lp_chars <- final_modeling_filtered %>%
+#   select(lp, AUM_line, LPType) %>%
+#   distinct()
+# 
+# lp_emissions <- lp_emissions %>%
+#   left_join(lp_chars, by = "lp") %>%
+#   mutate(
+#     LPType = factor(LPType),
+#     AUM_line = as.numeric(AUM_line)
+#   )
+# 
+# ### 7. Categorize new_manager_prop ###
+# lp_emissions <- lp_emissions %>%
+#   mutate(
+#     new_manager_cat = case_when(
+#       new_manager_prop < 0.25 ~ "low",
+#       new_manager_prop < 0.75 ~ "medium",
+#       TRUE ~ "high"
+#     ),
+#     new_manager_cat = factor(new_manager_cat, levels = c("low", "medium", "high"))
+#   )
+# 
+# ### 8. Scale Covariates for Transition Modeling ###
+# lp_emissions <- lp_emissions %>%
+#   mutate(
+#     fed_rate_scaled   = as.numeric(scale(fed_rate)),
+#     trail_1yr_scaled  = as.numeric(scale(annual_return)),
+#     avg_spread_scaled = as.numeric(scale(avg_spread)),
+#     AUM_line_scaled   = as.numeric(scale(AUM_line))
+#   )
+# 
+# ###############################################################################
+# # CLIP ONLY VALUES >= 1, PRESERVE REAL ZEROES
+# ###############################################################################
+# clip_top <- function(x, eps = 1e-8) {
+#   x_clipped <- ifelse(x >= 1, 1 - eps, x)
+#   pmax(x_clipped, 0)
+# }
+# 
+# lp_emissions <- lp_emissions %>%
+#   mutate(
+#     Buyout = clip_top(Buyout),
+#     Venture_General = clip_top(Venture_General),
+#     Secondaries = clip_top(Secondaries),
+#     `Early Stage Venture` = clip_top(`Early Stage Venture`),
+#     `Growth Equity` = clip_top(`Growth Equity`),
+#     `Co-Investment` = clip_top(`Co-Investment`)
+#   )
+# 
+# ###############################################################################
+# # 8a. Create Lagged Variables for Each Emission
+# ###############################################################################
+# lp_emissions <- lp_emissions %>%
+#   group_by(lp) %>%
+#   arrange(period_4yr) %>%
+#   mutate(
+#     lag_Buyout = dplyr::lag(Buyout),
+#     lag_Venture_General = dplyr::lag(Venture_General),
+#     lag_Secondaries = dplyr::lag(Secondaries),
+#     lag_Early_Stage_Venture = dplyr::lag(`Early Stage Venture`),
+#     lag_Growth_Equity = dplyr::lag(`Growth Equity`),
+#     lag_CoInvest = dplyr::lag(`Co-Investment`)
+#   ) %>%
+#   ungroup() %>%
+#   filter(
+#     !is.na(lag_Buyout),
+#     !is.na(lag_Venture_General),
+#     !is.na(lag_Secondaries),
+#     !is.na(lag_Early_Stage_Venture),
+#     !is.na(lag_Growth_Equity),
+#     !is.na(lag_CoInvest)
+#   )
+# 
+# ###############################################################################
+# # 9. ZIBetaARResponse Class with AR(1) on pi, alpha, and beta,
+# #    clamping pi to [eps, 1-eps]. pstart is set using moment estimates.
+# ###############################################################################
+# setClass("ZIBetaARResponse", contains = "response")
+# 
+# setGeneric("ZIBetaARResponse", function(y, pstart = NULL, fixed = NULL, x = NULL, ...) 
+#   standardGeneric("ZIBetaARResponse"))
+# 
+# setMethod("ZIBetaARResponse", signature(y = "ANY"),
+#   function(y, pstart = NULL, fixed = NULL, x = NULL, ...) {
+#     y <- matrix(y, ncol = 1)
+#     if (is.null(x)) {
+#       x <- cbind(rep(1, nrow(y)), rep(0, nrow(y)))
+#     } else {
+#       x <- as.matrix(x)
+#     }
+#     # 6 parameters: p0, p1 for logit(pi); a0, a1 for log(alpha); b0, b1 for log(beta)
+#     npar <- 6
+#     if (is.null(pstart)) {
+#       pstart <- c(-1, 0, log(2), 0, log(5), 0)
+#     }
+#     if (is.null(fixed)) fixed <- rep(FALSE, npar)
+#     parameters <- list(
+#       p0 = pstart[1], p1 = pstart[2],
+#       a0 = pstart[3], a1 = pstart[4],
+#       b0 = pstart[5], b1 = pstart[6]
+#     )
+#     new("ZIBetaARResponse", parameters = parameters, fixed = fixed, x = x, y = y, npar = npar)
+#   }
+# )
+# 
+# setMethod("show", "ZIBetaARResponse", function(object) {
+#   cat("ZIBetaARResponse:\n")
+#   cat("p0:", object@parameters$p0, " p1:", object@parameters$p1, "\n")
+#   cat("a0:", object@parameters$a0, " a1:", object@parameters$a1, "\n")
+#   cat("b0:", object@parameters$b0, " b1:", object@parameters$b1, "\n")
+# })
+# 
+# setMethod("dens", "ZIBetaARResponse", function(object, log = FALSE) {
+#   y_val <- object@y[,1]
+#   X <- object@x  # Nx2: col2 = lag
+#   p0 <- object@parameters$p0
+#   p1 <- object@parameters$p1
+#   a0 <- object@parameters$a0
+#   a1 <- object@parameters$a1
+#   b0 <- object@parameters$b0
+#   b1 <- object@parameters$b1
+#   
+#   # Compute pi with logistic and clamp it.
+#   logit_vals <- p0 + p1 * X[,2]
+#   pi_raw <- 1 / (1 + exp(-logit_vals))
+#   eps <- 1e-8
+#   pi_vals <- pmin(pmax(pi_raw, eps), 1 - eps)
+#   
+#   alpha_vals <- exp(a0 + a1 * X[,2])
+#   beta_vals  <- exp(b0 + b1 * X[,2])
+#   
+#   if (!log) {
+#     out <- ifelse(y_val == 0,
+#                   pi_vals,
+#                   (1 - pi_vals) * dbeta(y_val, shape1 = alpha_vals, shape2 = beta_vals))
+#     out
+#   } else {
+#     out <- ifelse(y_val == 0,
+#                   log(pi_vals),
+#                   log(1 - pi_vals) + dbeta(y_val, shape1 = alpha_vals, shape2 = beta_vals, log = TRUE))
+#     out
+#   }
+# })
+# 
+# setMethod("getpars", "ZIBetaARResponse", function(object, which = "pars", ...) {
+#   switch(which,
+#          "pars" = c(object@parameters$p0, object@parameters$p1,
+#                     object@parameters$a0, object@parameters$a1,
+#                     object@parameters$b0, object@parameters$b1),
+#          "fixed" = object@fixed)
+# })
+# 
+# setMethod("setpars", "ZIBetaARResponse", function(object, values, which = "pars", ...) {
+#   if (length(values) != object@npar) stop("length of 'values' must be ", object@npar)
+#   if (which == "pars") {
+#     object@parameters$p0 <- values[1]
+#     object@parameters$p1 <- values[2]
+#     object@parameters$a0 <- values[3]
+#     object@parameters$a1 <- values[4]
+#     object@parameters$b0 <- values[5]
+#     object@parameters$b1 <- values[6]
+#   } else if (which == "fixed") {
+#     object@fixed <- as.logical(values)
+#   }
+#   object
+# })
+# 
+# setMethod("fit", "ZIBetaARResponse", function(object, w) {
+#   if (missing(w) || is.null(w)) w <- rep(1, nrow(object@y))
+#   nll <- function(par) {
+#     object_temp <- setpars(object, par, which = "pars")
+#     dvals <- dens(object_temp, log = TRUE)
+#     sum(-w * dvals)
+#   }
+#   init_par <- getpars(object, "pars")
+#   fit_out <- optim(init_par, nll, method = "BFGS")
+#   object <- setpars(object, fit_out$par, which = "pars")
+#   object
+# })
+# 
+# setMethod("predict", "ZIBetaARResponse", function(object) {
+#   X <- object@x
+#   eps <- 1e-8
+#   pi_raw <- 1 / (1 + exp(-(object@parameters$p0 + object@parameters$p1 * X[,2])))
+#   pi_vals <- pmin(pmax(pi_raw, eps), 1 - eps)
+#   
+#   alpha_vals <- exp(object@parameters$a0 + object@parameters$a1 * X[,2])
+#   beta_vals  <- exp(object@parameters$b0 + object@parameters$b1 * X[,2])
+#   
+#   (1 - pi_vals) * (alpha_vals / (alpha_vals + beta_vals))
+# })
+# 
+# ZIBetaAR <- function(y, pstart = c(-1, 0, log(2), 0, log(5), 0), fixed = NULL, x = NULL) {
+#   ZIBetaARResponse(y = y, pstart = pstart, fixed = fixed, x = x)
+# }
+# 
+# ###############################################################################
+# # 10c. Build rModels Using ZIBetaAR (AR in pi, alpha, and beta) with Moment-based pstart
+# ###############################################################################
+# # This function uses compute_ZIBeta_moments_AR() to set pstart based on the moments.
+# compute_ZIBeta_moments_AR <- function(x) {
+#   p0 <- mean(x == 0, na.rm = TRUE)
+#   p0 <- min(max(p0, 1e-8), 1 - 1e-8)
+#   logit_p0 <- log(p0 / (1 - p0))
+#   nonzero <- x[x > 0]
+#   if(length(nonzero) < 2) {
+#     alpha <- 2; beta <- 5
+#   } else {
+#     m <- mean(nonzero)
+#     v <- var(nonzero)
+#     if(v > 0) {
+#       t_val <- (m * (1 - m) / v) - 1
+#       alpha <- m * t_val
+#       beta <- (1 - m) * t_val
+#       if(alpha <= 0) alpha <- 2
+#       if(beta <= 0) beta <- 5
+#     } else {
+#       alpha <- 2; beta <- 5
+#     }
+#   }
+#   c(logit_p0, 0, log(alpha), 0, log(beta), 0)
+# }
+# 
+# build_rModels <- function(M, data) {
+#   rModels <- vector("list", M)
+#   
+#   # Debug helper: test log-likelihood of a response
+#   test_pstart_ll <- function(respObj) {
+#     dvals <- dens(respObj, log = TRUE)
+#     if(any(is.infinite(dvals))) cat("Warning: infinite log-likelihood detected!\n")
+#     if(any(is.na(dvals))) cat("Warning: NA in log-likelihood detected!\n")
+#   }
+#   
+#   for (i in seq_len(M)) {
+#     # For each emission, get moment-based pstart using the function above.
+#     buy_pstart <- compute_ZIBeta_moments_AR(data$Buyout)
+#     vent_pstart <- compute_ZIBeta_moments_AR(data$Venture_General)
+#     sec_pstart <- compute_ZIBeta_moments_AR(data$Secondaries)
+#     esv_pstart <- compute_ZIBeta_moments_AR(data$`Early Stage Venture`)
+#     ge_pstart <- compute_ZIBeta_moments_AR(data$`Growth Equity`)
+#     ci_pstart <- compute_ZIBeta_moments_AR(data$`Co-Investment`)
+#     
+#     cat("[DEBUG] Buyout pstart:\n"); print(buy_pstart)
+#     cat("[DEBUG] Venture pstart:\n"); print(vent_pstart)
+#     cat("[DEBUG] Secondaries pstart:\n"); print(sec_pstart)
+#     cat("[DEBUG] Early Stage pstart:\n"); print(esv_pstart)
+#     cat("[DEBUG] Growth Equity pstart:\n"); print(ge_pstart)
+#     cat("[DEBUG] Co-Investment pstart:\n"); print(ci_pstart)
+#     
+#     # Build the responses with AR design matrix (intercept and lag)
+#     buyResp <- ZIBetaAR(
+#       y = data$Buyout,
+#       pstart = buy_pstart,
+#       x = cbind(1, data$lag_Buyout)
+#     )
+#     test_pstart_ll(buyResp)
+#     
+#     ventResp <- ZIBetaAR(
+#       y = data$Venture_General,
+#       pstart = vent_pstart,
+#       x = cbind(1, data$lag_Venture_General)
+#     )
+#     test_pstart_ll(ventResp)
+#     
+#     secResp <- ZIBetaAR(
+#       y = data$Secondaries,
+#       pstart = sec_pstart,
+#       x = cbind(1, data$lag_Secondaries)
+#     )
+#     test_pstart_ll(secResp)
+#     
+#     esvResp <- ZIBetaAR(
+#       y = data$`Early Stage Venture`,
+#       pstart = esv_pstart,
+#       x = cbind(1, data$lag_Early_Stage_Venture)
+#     )
+#     test_pstart_ll(esvResp)
+#     
+#     geResp <- ZIBetaAR(
+#       y = data$`Growth Equity`,
+#       pstart = ge_pstart,
+#       x = cbind(1, data$lag_Growth_Equity)
+#     )
+#     test_pstart_ll(geResp)
+#     
+#     ciResp <- ZIBetaAR(
+#       y = data$`Co-Investment`,
+#       pstart = ci_pstart,
+#       x = cbind(1, data$lag_CoInvest)
+#     )
+#     test_pstart_ll(ciResp)
+#     
+#     multiResp <- GLMresponse(
+#       formula = new_manager_cat ~ 1,
+#       data = data,
+#       family = depmixS4::multinomial("identity"),
+#       pstart = c(0.33, 0.33, 0.33)
+#     )
+#     
+#     rModels[[i]] <- list(buyResp, ventResp, secResp, esvResp, geResp, ciResp, multiResp)
+#   }
+#   rModels
+# }
+# 
+# trans_formula <- ~ fed_rate_scaled + trail_1yr_scaled + avg_spread_scaled + AUM_line_scaled + LPType
+# 
+# ntimes_vec <- lp_emissions %>%
+#   group_by(lp) %>%
+#   summarize(T = n(), .groups = "drop") %>%
+#   pull(T)
+# 
+# max_states <- 4
+# model_list <- list()
+# crit_table <- data.frame(nstates = integer(), logLik = numeric(), AIC = numeric(), BIC = numeric())
+# 
+# for (m in 2:max_states) {
+#   cat("Fitting model with", m, "states...\n")
+#   
+#   rModels_m <- build_rModels(m, lp_emissions)
+#   lp_prior_data <- lp_emissions %>% distinct(lp)
+#   
+#   trans_list <- lapply(seq_len(m), function(i) {
+#     transInit(trans_formula, nstates = m, data = lp_emissions)
+#   })
+#   
+#   prior_model <- transInit(
+#     ~ 1,
+#     ns = m,
+#     data = lp_prior_data,
+#     family = depmixS4::multinomial("identity")
+#   )
+#   
+#   mod_spec <- makeDepmix(
+#     response = rModels_m,
+#     transition = trans_list,
+#     prior = prior_model,
+#     ntimes = ntimes_vec,
+#     homogeneous = FALSE
+#   )
+#   
+#   set.seed(492)
+#   mod_fit <- fit(mod_spec, verbose = FALSE)
+#   
+#   llval <- logLik(mod_fit)
+#   np <- npar(mod_fit)
+#   n_tot <- sum(ntimes_vec)
+#   
+#   AIC_val <- -2 * llval + 2 * np
+#   BIC_val <- -2 * llval + np * log(n_tot)
+#   
+#   model_list[[as.character(m)]] <- mod_fit
+#   crit_table <- rbind(
+#     crit_table,
+#     data.frame(
+#       nstates = m,
+#       logLik = as.numeric(llval),
+#       AIC = as.numeric(AIC_val),
+#       BIC = as.numeric(BIC_val)
+#     )
+#   )
+# }
+# 
+# cat("Model selection criteria:\n")
+# print(crit_table)
+# 
+# best_nstates <- crit_table %>%
+#   arrange(BIC) %>%
+#   slice(1) %>%
+#   pull(nstates)
+# 
+# cat("Best model has", best_nstates, "states.\n")
+# 
+# best_model <- model_list[[as.character(best_nstates)]]
+# summary(best_model)
+# 
+# # Posterior decoding
+# post_res <- posterior(best_model, type = "viterbi")
+# table(post_res$state)
+# 
+# # Plot model selection criteria
+# crit_long <- crit_table %>%
+#   pivot_longer(cols = c(AIC, BIC), names_to = "criterion", values_to = "value")
+# 
+# ggplot(crit_long, aes(x = nstates, y = value, color = criterion)) +
+#   geom_line(size = 1) +
+#   geom_point(size = 2) +
+#   labs(title = "Model Selection Criteria vs. Number of States",
+#        x = "Number of States",
+#        y = "Criterion Value",
+#        color = "Criterion") +
+#   scale_color_manual(values = c("AIC" = "blue", "BIC" = "red")) +
+#   theme_minimal()
+# 
+# # -----------------------------------------------
+# # Additional Diagnostics: Pseudo-Residuals for Venture_General
+# # -----------------------------------------------
+# post_df <- posterior(best_model)
+# best_nstates <- ncol(post_df) - 1
+# state_probs <- post_df %>% select(-c("state"))
+# 
+# F_state <- function(x, p0, alpha, beta) {
+#   if (x == 0) {
+#     return(p0)
+#   } else {
+#     return(p0 + (1 - p0) * pbeta(x, shape1 = alpha, shape2 = beta))
+#   }
+# }
+# 
+# params_list <- lapply(1:best_nstates, function(s) {
+#   resp_obj <- best_model@response[[s]][[2]]
+#   pars <- getpars(resp_obj, "pars")
+#   list(p0 = plogis(pars[1]), alpha = exp(pars[2]), beta = exp(pars[3]))
+# })
+# 
+# F_t <- numeric(nrow(lp_emissions))
+# for (t in 1:nrow(lp_emissions)) {
+#   x_t <- lp_emissions$Venture_General[t]
+#   Fs_t <- sapply(1:best_nstates, function(s) {
+#     par <- params_list[[s]]
+#     F_state(x_t, p0 = par$p0, alpha = par$alpha, beta = par$beta)
+#   })
+#   gamma_t <- as.numeric(state_probs[t, ])
+#   F_t[t] <- sum(gamma_t * Fs_t)
+# }
+# z_t <- qnorm(F_t)
+# 
+# ggplot(data.frame(z = z_t), aes(x = z)) +
+#   geom_histogram(aes(y = ..density..), bins = 30, fill = "grey", color = "black") +
+#   stat_function(fun = dnorm, color = "red", size = 1) +
+#   labs(title = "Histogram of Normal Pseudo-Residuals",
+#        x = "Pseudo-Residual (z)", y = "Density") +
+#   theme_minimal()
+# 
+# ggplot(data.frame(z = z_t), aes(sample = z)) +
+#   stat_qq() +
+#   stat_qq_line(color = "red") +
+#   labs(title = "QQ-Plot of Normal Pseudo-Residuals",
+#        x = "Theoretical Quantiles", y = "Sample Quantiles") +
+#   theme_minimal()
+# 
+# acf(z_t, main = "ACF of Normal Pseudo-Residuals for Venture_General")
+# 
+# lb_test <- Box.test(z_t, lag = 15, type = "Ljung-Box")
+# print(lb_test)
+# 
+# # -----------------------------------------------
+# # Append state assignment to lp_emissions and plot state-specific densities
+# # -----------------------------------------------
+# post_res <- posterior(best_model, type = "viterbi")
+# lp_emissions <- lp_emissions %>% mutate(state = post_res$state)
+# 
+# params_list <- lapply(1:best_nstates, function(s) {
+#   resp_obj <- best_model@response[[s]][[2]]
+#   pars <- getpars(resp_obj, "pars")
+#   list(p0 = plogis(pars[1]), alpha = exp(pars[2]), beta = exp(pars[3]))
+# })
+# 
+# params_df <- do.call(rbind, lapply(1:length(params_list), function(s) {
+#   data.frame(state = s,
+#              p0 = params_list[[s]]$p0,
+#              alpha = params_list[[s]]$alpha,
+#              beta = params_list[[s]]$beta)
+# }))
+# print(params_df)
+# 
+# data_nonzero <- lp_emissions %>% filter(Venture_General > 0)
+# 
+# density_data <- do.call(rbind, lapply(unique(data_nonzero$state), function(s) {
+#   state_data <- data_nonzero %>% filter(state == s)
+#   par <- params_list[[s]]
+#   x_seq <- seq(min(state_data$Venture_General), max(state_data$Venture_General), length.out = 100)
+#   dens <- (1 - par$p0) * dbeta(x_seq, shape1 = par$alpha, shape2 = par$beta)
+#   data.frame(state = s, x = x_seq, density = dens)
+# }))
+# 
+# ggplot(data_nonzero, aes(x = Venture_General)) +
+#   geom_histogram(aes(y = ..density..), bins = 30, fill = "grey", color = "black", alpha = 0.6) +
+#   geom_line(data = density_data, aes(x = x, y = density), color = "red", size = 1) +
+#   facet_wrap(~ state, scales = "free") +
+#   labs(title = "State-specific Fitted Beta Density for Venture_General",
+#        x = "Venture_General", y = "Density")
+# 
+
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(depmixS4)
+library(lubridate)
+library(ggplot2)
+library(VGAM)
+
+### 1. Define Analysis Period and Bin Size ###
+min_yr <- 2000
+max_yr <- 2022
+step   <- 2  # 2-year bins
+
+### 2. Process Fund-Level Data: Assign Each Fund to Its Entry Period ###
+# Each fund is assigned to the period when it was added.
+funds <- final_modeling %>%
+  filter(!is.na(vintage_inception_year), vintage_inception_year <= max_yr) %>%
+  mutate(period_4yr = min_yr + step * floor((vintage_inception_year - min_yr) / step))
+
+### 3. Aggregate New Fund Counts by LP, Period, and Strategy ###
+lp_period_strategy <- funds %>%
+  group_by(lp, period_4yr, strategy) %>%
+  summarize(new_funds = n(), .groups = "drop")
+
+lp_period_totals <- lp_period_strategy %>%
+  group_by(lp, period_4yr) %>%
+  summarize(period_total = sum(new_funds, na.rm = TRUE), .groups = "drop")
+
+selected_strategies <- c("Buyout", "Venture (General)", "Secondaries",
+                         "Early Stage Venture", "Growth Equity", "Co-Investment")
+
+lp_counts_wide <- lp_period_strategy %>%
+  filter(strategy %in% selected_strategies) %>%
+  pivot_wider(
+    names_from  = strategy,
+    values_from = new_funds,
+    values_fill = list(new_funds = 0)
+  )
+
+### 4. Calculate Cumulative New Manager Proportion ###
+lp_managers_period <- final_modeling_filtered %>%
+  select(lp, vintage_inception_year, fund_manager) %>%
+  mutate(
+    fund_manager = as.character(fund_manager),
+    period_4yr   = min_yr + step * floor((vintage_inception_year - min_yr) / step)
+  ) %>%
+  distinct()
+
+lp_managers_cum <- lp_managers_period %>%
+  group_by(lp, period_4yr) %>%
+  summarize(current_managers = list(unique(fund_manager)), .groups = "drop") %>%
+  arrange(lp, period_4yr) %>%
+  group_by(lp) %>%
+  mutate(
+    cum_managers_all   = accumulate(current_managers, base::union),
+    cum_managers_prior = dplyr::lag(cum_managers_all, order_by = period_4yr, default = list(character(0)))
+  ) %>%
+  ungroup() %>%
+  mutate(
+    new_manager_count = map2_int(current_managers, cum_managers_prior, ~ length(setdiff(.x, .y))),
+    total_current     = map_int(current_managers, length),
+    new_manager_prop  = if_else(total_current > 0, new_manager_count / total_current, NA_real_)
+  ) %>%
+  select(lp, period_4yr, new_manager_prop)
+
+### 5. Merge Emissions Data ###
+lp_emissions <- lp_counts_wide %>%
+  left_join(lp_managers_cum, by = c("lp", "period_4yr")) %>%
+  left_join(lp_period_totals, by = c("lp", "period_4yr"))
+
+# Rename "Venture (General)" to Venture_General for ease.
+lp_emissions <- lp_emissions %>%
+  rename(Venture_General = `Venture (General)`)
+
+### 6. Incorporate Exogenous Macro Variables + LP Characteristics ###
+lp_emissions <- lp_emissions %>%
+  mutate(year_bin = period_4yr) %>%
+  left_join(exogenous, by = c("year_bin" = "year"))
+
+lp_chars <- final_modeling_filtered %>%
+  select(lp, AUM_line, LPType) %>%
+  distinct()
+
+lp_emissions <- lp_emissions %>%
+  left_join(lp_chars, by = "lp") %>%
+  mutate(
+    LPType   = factor(LPType),
+    AUM_line = as.numeric(AUM_line)
+  )
+
+### 7. (Optional) Categorize New Manager Proportion (for reference)
+lp_emissions <- lp_emissions %>%
+  mutate(
+    new_manager_cat = case_when(
+      new_manager_prop < 0.25 ~ "low",
+      new_manager_prop < 0.75 ~ "medium",
+      TRUE ~ "high"
+    ),
+    new_manager_cat = factor(new_manager_cat, levels = c("low", "medium", "high"))
+  )
+
+### 8. Scale Covariates for Transition Modeling ###
+lp_emissions <- lp_emissions %>%
+  mutate(
+    fed_rate_scaled   = as.numeric(scale(fed_rate)),
+    trail_1yr_scaled  = as.numeric(scale(annual_return)),
+    avg_spread_scaled = as.numeric(scale(avg_spread)),
+    AUM_line_scaled   = as.numeric(scale(AUM_line))
+  )
+
+### 9. Create Lagged Variables (if needed) – Not required for new fund counts ###
+# (Here we do not include lagged predictors because we focus on counts per period.)
+
+###############################################################################
+# 10. Force Count Variables to Integer (Poisson requires integer counts)
+###############################################################################
+lp_emissions <- lp_emissions %>%
+  mutate(
+    Buyout             = as.integer(round(Buyout)),
+    Venture_General    = as.integer(round(Venture_General)),
+    Secondaries        = as.integer(round(Secondaries)),
+    `Early Stage Venture` = as.integer(round(`Early Stage Venture`)),
+    `Growth Equity`       = as.integer(round(`Growth Equity`)),
+    `Co-Investment`       = as.integer(round(`Co-Investment`))
+  )
+
+###############################################################################
+# 11. Define a Flat List of Response Formulas and Matching Family List
+###############################################################################
+response_formulas <- list(
+  Buyout ~ 1,
+  Venture_General ~ 1,
+  Secondaries ~ 1,
+  `Early Stage Venture` ~ 1,
+  `Growth Equity` ~ 1,
+  `Co-Investment` ~ 1,
+  new_manager_cat ~ 1
+)
+
+fam_list <- list(
+  poisson(),                      # Buyout
+  poisson(),                      # Venture_General
+  poisson(),                      # Secondaries
+  poisson(),                      # Early Stage Venture
+  poisson(),                      # Growth Equity
+  poisson(),                      # Co-Investment
+  depmixS4::multinomial("identity")  # new_manager_cat
+)
+
+###############################################################################
+# 12. Filter Out LPs with Only One Time Point (needed for transitions)
+###############################################################################
+lp_emissions <- lp_emissions %>%
+  group_by(lp) %>%
+  filter(n() > 1) %>%
+  ungroup()
+
+lp_emissions <- lp_emissions %>%
+  filter(period_4yr >= min_yr & period_4yr <= max_yr)
+
+###############################################################################
+# 13. Compute ntimes (Number of Periods per LP)
+###############################################################################
+ntimes_vec <- lp_emissions %>%
+  group_by(lp) %>%
+  summarize(T = n(), .groups = "drop") %>%
+  pull(T)
+
+###############################################################################
+# 14. Set Transition Formula (including new_manager_prop as a continuous predictor)
+###############################################################################
+trans_formula <- ~ fed_rate_scaled + trail_1yr_scaled + avg_spread_scaled + AUM_line_scaled + LPType
+
+###############################################################################
+# 15. Build HMM Using depmix() with a Flat List of Responses
+###############################################################################
+max_states <- 6
+model_list <- list()
+crit_table <- data.frame(nstates = integer(), logLik = numeric(),
+                         AIC = numeric(), BIC = numeric())
+
+for(m in 2:max_states) {
+  cat("Fitting model with", m, "states...\n")
+  
+  mod_spec <- depmix(
+    response    = response_formulas,
+    data        = lp_emissions,
+    nstates     = m,
+    family      = fam_list,
+    ntimes      = ntimes_vec,
+    transition  = trans_formula,
+    prior       = ~1,
+    homogeneous = FALSE
+  )
+  
+  set.seed(492)
+  mod_fit <- fit(mod_spec, verbose = TRUE)
+  
+  llval <- logLik(mod_fit)
+  np    <- npar(mod_fit)
+  n_tot <- sum(ntimes_vec)
+  
+  AIC_val <- -2 * llval + 2 * np
+  BIC_val <- -2 * llval + np * log(n_tot)
+  
+  model_list[[as.character(m)]] <- mod_fit
+  crit_table <- rbind(
+    crit_table,
+    data.frame(
+      nstates = m,
+      logLik  = as.numeric(llval),
+      AIC     = as.numeric(AIC_val),
+      BIC     = as.numeric(BIC_val)
+    )
+  )
+}
+
+cat("Model selection criteria:\n")
+print(crit_table)
+
+best_nstates <- crit_table %>%
+  arrange(BIC) %>%
+  slice(1) %>%
+  pull(nstates)
+
+cat("Best model has", best_nstates, "states.\n")
+
+best_model <- model_list[[as.character(best_nstates)]]
+summary(best_model)
+
+###############################################################################
+# 16. Posterior Decoding and Diagnostics for the "Buyout" Poisson Response
+###############################################################################
+post_res <- posterior(best_model, type = "viterbi")
+table(post_res$state)
+
+crit_long <- crit_table %>%
+  pivot_longer(cols = c(AIC, BIC), names_to = "criterion", values_to = "value")
+
+ggplot(crit_long, aes(x = nstates, y = value, color = criterion)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(title = "Poisson HMM: Model Selection Criteria vs. Number of States",
+       x = "Number of States", y = "Criterion Value", color = "Criterion") +
+  scale_color_manual(values = c("AIC" = "blue", "BIC" = "red")) +
+  theme_minimal()
+
+###############################################################################
+# 17. Pseudo-Residuals for "Buyout" (the 1st Poisson Response)
+###############################################################################
+post_df <- posterior(best_model)
+# The first column is the Viterbi state; remaining columns are state probabilities.
+best_nstates <- ncol(post_df) - 1  
+state_probs  <- post_df %>% select(-c("state"))
+
+Buyout_val <- lp_emissions$Buyout
+
+# Extract lambda for Buyout from the first response in each state.
+params_list <- lapply(seq_len(best_nstates), function(s) {
+  resp_obj <- best_model@response[[s]][[1]]
+  par_int  <- getpars(resp_obj, which = "pars")
+  exp(par_int[1])  # lambda_s for state s
+})
+
+F_mix <- numeric(nrow(lp_emissions))
+for(t in seq_len(nrow(lp_emissions))) {
+  x_t <- Buyout_val[t]
+  Fs_t <- sapply(seq_len(best_nstates), function(s) {
+    lam_s <- params_list[[s]]
+    ppois(x_t, lam_s)
+  })
+  gamma_t <- as.numeric(state_probs[t, ])
+  F_mix[t] <- sum(gamma_t * Fs_t)
+}
+
+z_t <- qnorm(F_mix)
+
+ggplot(data.frame(z = z_t), aes(x = z)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "grey", color = "black") +
+  stat_function(fun = dnorm, color = "red", size = 1) +
+  labs(title = "Histogram of Normal Pseudo-Residuals (Buyout Poisson)",
+       x = "Pseudo-Residual (z)", y = "Density") +
+  theme_minimal()
+
+ggplot(data.frame(z = z_t), aes(sample = z)) +
+  stat_qq() +
+  stat_qq_line(color = "red") +
+  labs(title = "QQ-Plot of Normal Pseudo-Residuals (Buyout Poisson)",
+       x = "Theoretical Quantiles", y = "Sample Quantiles") +
+  theme_minimal()
+
+acf(z_t, main = "ACF of Normal Pseudo-Residuals (Buyout)")
+
+lb_test <- Box.test(z_t, lag = 15, type = "Ljung-Box")
+print(lb_test)
+
+###############################################################################
+# 18. Append State Assignment to lp_emissions and Display State Counts
+###############################################################################
+post_res <- posterior(best_model, type = "viterbi")
+lp_emissions <- lp_emissions %>% mutate(state = post_res$state)
+table(lp_emissions$state)
+
+
+```
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Define the names of the response variables (as they appear in your data)
+response_vars <- c("Buyout", "Venture_General", "Secondaries", 
+                   "Early Stage Venture", "Growth Equity", "Co-Investment")
+
+# Ensure they are stored as integers
+lp_emissions <- lp_emissions %>%
+  mutate(across(all_of(response_vars), ~ as.integer(round(.))))
+
+
+# Loop over each response variable and print an individual plot
+for (var in response_vars) {
+  # Compute the mean (lambda) for the variable
+  lambda <- mean(lp_emissions[[var]], na.rm = TRUE)
+  
+  # Create the histogram with binwidth = 1 and overlay the Poisson density.
+  p <- ggplot(lp_emissions, aes(x = .data[[var]])) +
+    geom_histogram(breaks = seq(min(lp_emissions[[var]], na.rm = TRUE), 
+                                max(lp_emissions[[var]], na.rm = TRUE) + 1, by = 1),
+                   fill = "lightblue", color = "black", alpha = 0.7) +
+    stat_function(fun = function(x) dpois(x, lambda) * nrow(lp_emissions),
+                  color = "red", size = 1) +
+    labs(title = paste(var, "- mean =", round(lambda, 2)),
+         x = var,
+         y = "Frequency") +
+    theme_minimal()
+  
+  print(p)  # Print each plot individually
+}
+
+
+
+```
+
+
+
 
