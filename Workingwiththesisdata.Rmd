@@ -1605,7 +1605,6 @@ ggplot(div_prop_summary, aes(x = period_2yr, y = mean_norm_div_prop)) +
   ) +
   theme_minimal()
 
-# write.csv(lp_shares_prop, "lp_shares_prop.csv")
 
 ```
 
@@ -1959,6 +1958,10 @@ div_panel_model <- div_panel_model %>%
     lag4_win_mean  = compute_lagged_perf(period_2yr, lp, gap = 4, window_length = 10)[["mean"]],
     lag4_nowin_med = compute_lagged_perf(period_2yr, lp, gap = 4, window_length = NA)[["median"]],
     lag4_nowin_mean= compute_lagged_perf(period_2yr, lp, gap = 4, window_length = NA)[["mean"]],
+    lag6_win_med   = compute_lagged_perf(period_2yr, lp, gap = 6, window_length = 10)[["median"]],
+    lag6_win_mean  = compute_lagged_perf(period_2yr, lp, gap = 6, window_length = 10)[["mean"]],
+    lag6_nowin_med = compute_lagged_perf(period_2yr, lp, gap = 6, window_length = NA)[["median"]],
+    lag6_nowin_mean= compute_lagged_perf(period_2yr, lp, gap = 6, window_length = NA)[["mean"]],
     # Corrected excess performance: use the new function to compute excess performance.
     lag2_excess_med  = compute_excess_perf_correct(period_2yr, lp, gap = 2, window_length = 10)[["median"]],
     lag2_excess_mean = compute_excess_perf_correct(period_2yr, lp, gap = 2, window_length = 10)[["mean"]],
@@ -2079,58 +2082,62 @@ div_panel_model_filtered <- div_panel_model_filtered %>%
 
 fixed effects model
 ```{r}
-
+library(stargazer)
 model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds + avg_size + avg_spread + lag4_nowin_med + AUM_line + LPType + log_cum_total_funds + log_current_lag_avg_close_size + log_current_lag_avg_manager_aum + period_factor
 
 # -------------------------------------------------------------------
 # 3. Run the panel regression using plm (within estimator = fixed effects).
 # -------------------------------------------------------------------
-panel_model <- plm(model_formula, 
+summary(div_panel_model_filtered$normalized_div_prop)
+
+
+summary(div_panel_model_filtered$divergence_prop)
+panel_model_normalized <- plm(model_formula, 
                    data = div_panel_model_filtered, 
                    index = c("lp", "period_2yr"),
-                   model = "within", within = TRUE)
+                   model = "within", within = TRUE, effect = "individual")
+summary(panel_model_normalized)
+model_formula_raw <- divergence_prop ~ fed_rate + trail_1yr + num_funds + avg_size + avg_spread + lag4_nowin_med + AUM_line + LPType + log_cum_total_funds + log_current_lag_avg_close_size + log_current_lag_avg_manager_aum + period_factor
+panel_model_raw <- plm(model_formula_raw, 
+                   data = div_panel_model_filtered, 
+                   index = c("lp", "period_2yr"),
+                   model = "within", within = TRUE, effect = "individual")
+summary(panel_model_raw)
 
-?plm()
-
-summary(panel_model)
-
-# -------------------------------------------------------------------
-# 4. Obtain standard errors clustered at the LP level.
-# -------------------------------------------------------------------
 
 
-clustered_vcov_HC1 <- vcovHC(panel_model, type = "HC1", cluster = "group", method = "white1")
-clustered_vcov_HC2 <- vcovHC(panel_model, type = "HC1", cluster = "group", method = "arellano")
-clustered_vcov_HC3 <- vcovHC(panel_model, type = "HC3", cluster = "group")
+model_formula_for_vif <- model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds + avg_size + avg_spread + lag4_nowin_med + AUM_line + log_cum_total_funds + log_current_lag_avg_close_size + log_current_lag_avg_manager_aum
+lm_model_for_vif <- lm(model_formula_for_vif, data = div_panel_model_filtered)
+vif_values <- vif(lm_model_for_vif)
+print(vif_values)
 
-?
-# Compare coefficient tests:
-cat("Using HC1:\n")
-print(coeftest(panel_model, vcov = clustered_vcov_HC1))
-
-cat("Using HC2:\n")
-print(coeftest(panel_model, vcov = clustered_vcov_HC2))
-
-cat("Using HC3:\n")
-print(coeftest(panel_model, vcov = clustered_vcov_HC3))
-
-# -------------------------------------------------------------------
-# 5. Run Diagnostic Tests:
-# -------------------------------------------------------------------
 # (a) Breusch-Godfrey test for serial correlation in panel data.
-bg_test <- pbgtest(panel_model)
+bg_test <- pbgtest(panel_model_normalized)
 print(bg_test)
 
 # (b) Pesaran's test for cross-sectional dependence.
-csd_test <- pcdtest(panel_model, test = "cd")
+csd_test <- pcdtest(panel_model_normalized, test = "cd")
 print(csd_test)
 
 # (c) Breusch-Pagan test for heteroskedasticity.
-bp_test <- bptest(panel_model)
+bp_test <- bptest(panel_model_normalized)
 print(bp_test)
 
-summary(div_panel_model_filtered$normalized_div_prop)
-?plm()
+
+bg_test <- pbgtest(panel_model_raw)
+print(bg_test)
+
+# (b) Pesaran's test for cross-sectional dependence.
+csd_test <- pcdtest(panel_model_raw, test = "cd")
+print(csd_test)
+
+# (c) Breusch-Pagan test for heteroskedasticity.
+bp_test <- bptest(panel_model_raw)
+print(bp_test)
+
+panel_regression_cov <- vcovHC(panel_model_normalized, type = "HC1", cluster = "group", method = "arellano")
+coeftest(panel_model_normalized, vcov = panel_regression_cov)
+
 ```
 estimating size of fixed effects
 
@@ -2198,9 +2205,7 @@ div_panel_model_RE <- div_panel_model_RE %>%
 
 # Specify the regression formula.
 # Note: 'LPType' should be a factor if it's categorical.
-model_formula <- normalized_div_prop ~ log_fed_rate + trail_1yr + num_funds + 
-  log_capital_raised + log_avg_size + log_avg_spread + lag4_win_med + AUM_line + LPType
-
+model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds + avg_size + avg_spread + lag4_nowin_med + AUM_line + LPType + log_current_lag_avg_close_size + log_current_lag_avg_manager_aum
 # Estimate the random effects model using plm.
 # The "random" model here allows the time-invariant variables to be estimated.
 panel_model_re <- plm(model_formula, 
@@ -2232,7 +2237,8 @@ performance_metrics <- c("lag2_win_med", "lag2_win_mean",
                     "lag4_nowin_med", "lag4_nowin_mean",
                     "lag2_excess_med", "lag2_excess_mean",
                     "lag3_excess_med", "lag3_excess_mean",
-                    "lag4_excess_med")
+                    "lag4_excess_med", "lag6_win_med", "lag6_win_mean",
+                    "lag6_nowin_med", "lag6_nowin_mean")
 
 
 # Prepare an empty list to store results.
@@ -2282,27 +2288,9 @@ compare fixed effect and random effects
 library(plm)
 library(lmtest)
 
-# Suppose your panel data is in 'div_panel_model_filtered' 
-# with individual index "lp" and time index "period_2yr"
-# and your model formula is defined as:
-model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds +
-  capital_raised + avg_size + avg_spread + lag4_excess_med + AUM_line + LPType
 
-# Estimate the fixed effects model (within estimator)
-fe_model <- plm(model_formula, 
-                data = div_panel_model_filtered, 
-                index = c("lp", "period_2yr"), 
-                model = "within")
-
-# Estimate the random effects model
-re_model <- plm(model_formula, 
-                data = div_panel_model_filtered, 
-                index = c("lp", "period_2yr"), 
-                model = "random",
-                random.method = "walhus")
-
-# Conduct the Hausman test:
-hausman_result <- phtest(fe_model, re_model)
+hausman_result <- phtest(panel_model,
+                         panel_model_re)
 print(hausman_result)
 
 ```
