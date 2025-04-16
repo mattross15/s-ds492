@@ -1706,6 +1706,8 @@ ggplot(div_lptype_summary, aes(x = period_2yr, y = median_div, color = LPType)) 
 ```
 
 ```{r}
+
+library(lubridate)
 fed <- read.csv("/Users/mross/Desktop/fed_cleaned.csv")
 spreads <- read.csv("/Users/mross/Desktop/Corporate Spreads.csv")
 if (!require("quantmod")) {
@@ -1786,6 +1788,11 @@ spreads_yearly <- spreads %>%
   group_by(year) %>%
   summarize(avg_spread = mean(BAMLC0A0CM, na.rm = TRUE), .groups = "drop")
 
+ipos_yearly <- read.csv("annual_ipos_2000_2025.csv")
+# rename column to year
+ipos_yearly <- ipos_yearly %>%
+  rename(year = Year) %>%
+  filter(year >= 2000, year <= 2022) %>% select(year, IPOs)
 
 #### 4. Combine All Exogenous Variables ####
 # Now merge fed_yearly, sp500_yearly, and pe_inflow by year.
@@ -1793,7 +1800,8 @@ exogenous <- fed_yearly %>%
   full_join(sp500_yearly, by = "year") %>%
   full_join(pe_inflow, by = "year") %>% 
   full_join(spreads_yearly, by = "year") %>%
-  arrange(year) %>% filter(year >= 2000)
+  full_join(ipos_yearly, by = "year") %>%
+   arrange(year) %>% filter(year >= 2000)
 
 # Print the exogenous dataset
 print(exogenous)
@@ -1807,6 +1815,16 @@ ggplot(exogenous_long, aes(x = year, y = return, color = trailing)) +
   geom_line(size = 1) +
   labs(title = "S&P 500 Trailing Returns", x = "Year", y = "Trailing Return") +
   theme_minimal()
+
+#plot fed rates over time
+ggplot(exogenous, aes(x = year, y = fed_rate)) +
+  geom_line(size = 1, color = "blue") +
+  labs(title = "Federal Reserve Rates Over Time", x = "Year", y = "Fed Rate (%)") +
+  theme_minimal()
+
+
+
+
 
 colnames(final_modeling)
 ```
@@ -2083,15 +2101,17 @@ div_panel_model_filtered <- div_panel_model_filtered %>%
 fixed effects model
 ```{r}
 library(stargazer)
+library(car)
+
+
 model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds + avg_size + avg_spread + lag4_nowin_med + AUM_line + LPType + log_cum_total_funds + log_current_lag_avg_close_size + log_current_lag_avg_manager_aum + period_factor
 
 # -------------------------------------------------------------------
 # 3. Run the panel regression using plm (within estimator = fixed effects).
-# -------------------------------------------------------------------
-summary(div_panel_model_filtered$normalized_div_prop)
+# ------------------------------------------------------------------
 
+summary(div_panel_model_filtered$lag4_nowin_med)
 
-summary(div_panel_model_filtered$divergence_prop)
 panel_model_normalized <- plm(model_formula, 
                    data = div_panel_model_filtered, 
                    index = c("lp", "period_2yr"),
@@ -2106,7 +2126,7 @@ summary(panel_model_raw)
 
 
 
-model_formula_for_vif <- model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds + avg_size + avg_spread + lag4_nowin_med + AUM_line + log_cum_total_funds + log_current_lag_avg_close_size + log_current_lag_avg_manager_aum
+model_formula_for_vif <- model_formula <- normalized_div_prop ~ fed_rate + trail_1yr + num_funds + avg_size + avg_spread + lag4_nowin_med + AUM_line + log_cum_total_funds + log_current_lag_avg_close_size + log_current_lag_avg_manager_aum + IPOs
 lm_model_for_vif <- lm(model_formula_for_vif, data = div_panel_model_filtered)
 vif_values <- vif(lm_model_for_vif)
 print(vif_values)
@@ -2137,6 +2157,26 @@ print(bp_test)
 
 panel_regression_cov <- vcovHC(panel_model_normalized, type = "HC1", cluster = "group", method = "arellano")
 coeftest(panel_model_normalized, vcov = panel_regression_cov)
+
+div_panel_model_filtered_short <- div_panel_model_filtered %>% filter(period_2yr >=2010)
+panel_model_normalized_short <- panel_model_normalized <- plm(model_formula, 
+                   data = div_panel_model_filtered_short, 
+                   index = c("lp", "period_2yr"),
+                   model = "within", within = TRUE, effect = "individual")
+summary(panel_model_normalized_short)
+bg_test <- pbgtest(panel_model_normalized_short)
+print(bg_test)
+
+# (b) Pesaran's test for cross-sectional dependence.
+csd_test <- pcdtest(panel_model_normalized_short, test = "cd")
+print(csd_test)
+
+# (c) Breusch-Pagan test for heteroskedasticity.
+bp_test <- bptest(panel_model_normalized_short)
+print(bp_test)
+
+panel_regression_short_cov <- vcovHC(panel_model_normalized, type = "HC1", cluster = "group", method = "arellano")
+coeftest(panel_model_normalized_short, vcov = panel_regression_short_cov)
 
 ```
 estimating size of fixed effects
@@ -2294,6 +2334,7 @@ hausman_result <- phtest(panel_model,
 print(hausman_result)
 
 ```
+
 ### Second panel regression model -- geographic divergence
 ```{r}
 # Load necessary packages
